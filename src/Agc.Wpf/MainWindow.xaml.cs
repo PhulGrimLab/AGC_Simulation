@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private readonly Stopwatch _stopwatch = new();
     private TimeSpan _lastTick;
     private bool _updatingSlider;
+    private bool _updatingPhaseBox;
 
     public MainWindow()
     {
@@ -119,6 +120,19 @@ public partial class MainWindow : Window
         _updatingSlider = true;
         TimelineSlider.Value = snapshot.Met.TotalSeconds;
         _updatingSlider = false;
+
+        // 단계 목록도 현재 단계를 가리키게 한다. 그렇지 않으면 같은 항목을 다시 골라도 선택 변경이 없어 이동하지 않는다.
+        if (PhaseBox.SelectedIndex != snapshot.PhaseIndex)
+        {
+            _updatingPhaseBox = true;
+            PhaseBox.SelectedIndex = snapshot.PhaseIndex;
+            _updatingPhaseBox = false;
+        }
+        else
+        {
+            // 이미 현재 단계를 가리키고 있으면 바꿀 것이 없다.
+        }
+
         PlayButton.Content = _sim.IsRunning ? "⏸ 일시정지" : "▶ 재생";
 
         Illustration.Update(snapshot, _sim.Timeline);
@@ -144,6 +158,16 @@ public partial class MainWindow : Window
 
     private void PlayButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!_sim.IsRunning && _sim.Met >= _sim.Timeline.Duration)
+        {
+            // 미션 끝에서 재생을 누르면 바로 다시 멈추므로 처음부터 다시 시작한다.
+            _sim.Seek(TimeSpan.Zero);
+        }
+        else
+        {
+            // 중간 지점이거나 이미 재생 중이면 그대로 재생/일시정지를 전환한다.
+        }
+
         _sim.IsRunning = !_sim.IsRunning;
         RefreshView();
     }
@@ -159,7 +183,8 @@ public partial class MainWindow : Window
 
     private void PhaseBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_sim is not null && PhaseBox.SelectedIndex >= 0)
+        // 현재 단계 표시를 맞추려고 코드가 선택을 바꾸는 중의 변경은 사용자 조작이 아니다.
+        if (_sim is not null && !_updatingPhaseBox && PhaseBox.SelectedIndex >= 0)
         {
             _sim.Seek(_sim.Timeline.Keyframes[PhaseBox.SelectedIndex].Met);
             RefreshView();

@@ -135,6 +135,41 @@ public sealed class DskyProgramAndDisplayRequestTests
     }
 
     [TestMethod]
+    public void V34_TerminatesRunningMonitor_AndFreesTheDisplayForRequests()
+    {
+        _dsky.Press("V16N36E");
+
+        _dsky.Press("V34E");
+
+        Assert.IsFalse(_dsky.Display.Lamps.HasFlag(DskyLamps.CompActy), "모니터가 끝났다");
+        _telemetry.Current = FakeTelemetry.Make(met: new TimeSpan(5, 6, 7), program: 11);
+        _dsky.Update(TimeSpan.FromSeconds(2));
+        Assert.AreEqual("+00001", _dsky.Display.R1, "더 이상 갱신되지 않는다");
+
+        _dsky.RequestDisplay(6, 43, flash: false);
+        Assert.AreEqual("43", _dsky.Display.Noun, "승무원이 쓰고 있지 않으므로 바로 표시된다");
+        Assert.IsFalse(_dsky.Display.Lamps.HasFlag(DskyLamps.KeyRel));
+    }
+
+    [TestMethod]
+    public void KeysPressedDuringLampTest_AreIgnored()
+    {
+        _dsky.Press("V35E");
+
+        _dsky.Press("V3");
+        _dsky.Update(DskyController.LampTestDuration + TimeSpan.FromMilliseconds(1));
+
+        Assert.AreEqual("88", _dsky.Display.Verb);
+        _dsky.Press("7");
+        Assert.AreEqual("88", _dsky.Display.Verb, "테스트 중 누른 V3가 숨은 입력 상태로 남아 887이 되면 안 된다");
+        _dsky.Press("R");
+        Assert.IsFalse(OprErr);
+        _dsky.Press("V16N36E");
+        Assert.AreEqual("16", _dsky.Display.Verb);
+        Assert.IsFalse(OprErr);
+    }
+
+    [TestMethod]
     public void NormalDisplay_DoesNotFlash()
     {
         _dsky.Press("V16N36E");

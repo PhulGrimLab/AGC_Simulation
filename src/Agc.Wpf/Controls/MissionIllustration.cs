@@ -22,6 +22,11 @@ public sealed class MissionIllustration : Canvas
     private const double MarkerSize = 16;
     private const double MarkerMinX = 0.12;
     private const double MarkerXSpan = 0.76;
+    // 우주선 마커가 표면 위로 올라갈 수 있는 높이의 비율(위쪽 가장자리에 붙지 않도록 여유를 둔다).
+    private const double MarkerAltitudeScale = 0.9;
+    private const double StarSize = 2;
+    private const double StarMinOpacity = 0.3;
+    private const double StarOpacitySpan = 0.7;
 
     private static Brush FrozenBrush(Color color)
     {
@@ -69,7 +74,7 @@ public sealed class MissionIllustration : Canvas
 
         var surfaceY = ActualHeight * (BodyCenterYRatio - BodyRadiusRatio);
         var altitudeRatio = Math.Clamp(Math.Log10(1 + snapshot.Telemetry.AltitudeMeters) / MaxAltitudeLogMeters, 0, 1);
-        var markerY = surfaceY - altitudeRatio * surfaceY * 0.9 - MarkerSize;
+        var markerY = surfaceY - altitudeRatio * surfaceY * MarkerAltitudeScale - MarkerSize;
 
         SetLeft(_marker, ActualWidth * (MarkerMinX + MarkerXSpan * fraction) - MarkerSize / 2);
         SetTop(_marker, Math.Max(markerY, 0));
@@ -83,7 +88,13 @@ public sealed class MissionIllustration : Canvas
         var random = new Random(StarSeed);
         for (var i = 0; i < StarCount; i++)
         {
-            var star = new Ellipse { Width = 2, Height = 2, Fill = Brushes.White, Opacity = 0.3 + random.NextDouble() * 0.7 };
+            var star = new Ellipse
+            {
+                Width = StarSize,
+                Height = StarSize,
+                Fill = Brushes.White,
+                Opacity = StarMinOpacity + random.NextDouble() * StarOpacitySpan,
+            };
             SetLeft(star, random.NextDouble() * ActualWidth);
             SetTop(star, random.NextDouble() * ActualHeight);
             _stars.Add(star);

@@ -50,6 +50,12 @@ public sealed class SegmentDisplay : FrameworkElement
     private const double DigitWidthRatio = 0.76;
     private const double ThicknessRatio = 0.18;
     private const double GapRatio = 0.7;
+    private const double CenterRatio = 0.5;
+    private const double DefaultHeight = 40.0;
+
+    // 칸 크기가 바뀌지 않는 한 재사용하는 세그먼트 도형(렌더링마다 새로 만들지 않기 위한 캐시).
+    private StreamGeometry[]? _segmentGeometries;
+    private Size _geometryCellSize;
 
     private static readonly int[] DigitMasks =
     [
@@ -71,7 +77,7 @@ public sealed class SegmentDisplay : FrameworkElement
     public SegmentDisplay()
     {
         RenderTransform = new SkewTransform(-SlantDegrees, 0);
-        RenderTransformOrigin = new Point(0.5, 0.5);
+        RenderTransformOrigin = new Point(CenterRatio, CenterRatio);
     }
 
     public string Text
@@ -100,8 +106,8 @@ public sealed class SegmentDisplay : FrameworkElement
 
     protected override Size MeasureOverride(Size availableSize)
     {
-        // 높이가 정해지면 그 높이에 맞는 칸 너비를 사용한다. 높이가 무한이면 기본 높이 40.
-        var height = double.IsInfinity(availableSize.Height) ? 40.0 : availableSize.Height;
+        // 높이가 정해지면 그 높이에 맞는 칸 너비를 사용한다. 높이가 무한이면 기본 높이를 쓴다.
+        var height = double.IsInfinity(availableSize.Height) ? DefaultHeight : availableSize.Height;
         return new Size(height * CellAspect * DigitCount, height);
     }
 
@@ -110,10 +116,14 @@ public sealed class SegmentDisplay : FrameworkElement
         var count = Math.Max(DigitCount, 1);
         var cellWidth = ActualWidth / count;
         var text = Text ?? string.Empty;
+        EnsureSegmentGeometries(cellWidth, ActualHeight);
         for (var i = 0; i < count; i++)
         {
             var ch = i < text.Length ? text[i] : ' ';
-            DrawCell(dc, i * cellWidth, cellWidth, ActualHeight, MaskFor(ch));
+            // 세그먼트 도형은 칸 크기에만 의존하므로 한 번 만든 것을 칸마다 평행 이동해서 재사용한다.
+            dc.PushTransform(new TranslateTransform(i * cellWidth, 0));
+            DrawCell(dc, MaskFor(ch));
+            dc.Pop();
         }
     }
 
@@ -133,17 +143,35 @@ public sealed class SegmentDisplay : FrameworkElement
         };
     }
 
-    private void DrawCell(DrawingContext dc, double cellX, double cellWidth, double height, int litMask)
+    /// <summary>첫 번째 칸(x=0) 기준의 세그먼트 도형 8개를 만든다. 칸 크기가 바뀔 때만 다시 만든다.</summary>
+    private void EnsureSegmentGeometries(double cellWidth, double height)
     {
+        if (_segmentGeometries is not null && _geometryCellSize == new Size(cellWidth, height))
+        {
+            return;
+        }
+
         var width = cellWidth * DigitWidthRatio;
         var t = width * ThicknessRatio;
-        var left = cellX + (cellWidth - width) / 2 + t / 2;
-        var right = cellX + (cellWidth + width) / 2 - t / 2;
+        var left = (cellWidth - width) / 2 + t / 2;
+        var right = (cellWidth + width) / 2 - t / 2;
         var top = t;
         var bottom = height - t;
         var mid = height / 2;
         var gap = t * GapRatio;
 
+        var geometries = new StreamGeometry[SegmentCount];
+        for (var seg = 0; seg < SegmentCount; seg++)
+        {
+            geometries[seg] = PolygonGeometry(SegmentPoints(1 << seg, left, right, top, mid, bottom, t, gap));
+        }
+
+        _segmentGeometries = geometries;
+        _geometryCellSize = new Size(cellWidth, height);
+    }
+
+    private void DrawCell(DrawingContext dc, int litMask)
+    {
         for (var seg = 0; seg < SegmentCount; seg++)
         {
             var isLit = (litMask & (1 << seg)) != 0;
@@ -153,8 +181,7 @@ public sealed class SegmentDisplay : FrameworkElement
                 continue;
             }
 
-            var points = SegmentPoints(1 << seg, left, right, top, mid, bottom, t, gap);
-            dc.DrawGeometry(isLit ? LitBrush : UnlitBrush, null, PolygonGeometry(points));
+            dc.DrawGeometry(isLit ? LitBrush : UnlitBrush, null, _segmentGeometries![seg]);
         }
     }
 
@@ -192,7 +219,7 @@ public sealed class SegmentDisplay : FrameworkElement
         using (var ctx = geometry.Open())
         {
             ctx.BeginFigure(points[0], isFilled: true, isClosed: true);
-            ctx.PolyLineTo(points.Skip(1).ToArray(), isStroked: true, isSmoothJoin: false);
+            ctx.PolyLineTo(points[1..], isStroked: true, isSmoothJoin: false);
         }
 
         geometry.Freeze();

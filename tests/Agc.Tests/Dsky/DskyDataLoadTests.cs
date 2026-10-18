@@ -171,20 +171,81 @@ public sealed class DskyDataLoadTests
     [TestMethod]
     public void V33_ProceedWithoutData_EndsLoadAndKeepsClock()
     {
-        _dsky.Press("V25N36E");
+        _telemetry.Current = FakeTelemetry.Make(met: new TimeSpan(1, 2, 3));
+        _dsky.Press("V25N36E+00999E");
 
         _dsky.Press("V33E");
+
+        Assert.IsFalse(_dsky.Display.VerbNounFlashing, "V33E는 깜박이는 로드에 대한 정상 응답이다");
+        Assert.IsFalse(OprErr);
+        _dsky.Press("V06N36E");
+        Assert.AreEqual("+00001", _dsky.Display.R1, "일부만 입력했으므로 시계는 바뀌지 않는다");
+    }
+
+    [TestMethod]
+    public void V34_DuringLoad_IsAcceptedAndTerminatesWithoutError()
+    {
+        _dsky.Press("V25N36E+001");
+
+        _dsky.Press("V34E");
 
         Assert.IsFalse(_dsky.Display.VerbNounFlashing);
         Assert.IsFalse(OprErr);
     }
 
     [TestMethod]
-    public void VerbKey_DuringLoad_AbortsTheLoad()
+    public void VerbKey_DuringLoad_KeepsLoadWaitingUntilAVerbIsExecuted()
     {
         _dsky.Press("V25N36E+001V");
 
-        Assert.IsFalse(_dsky.Display.VerbNounFlashing);
+        Assert.IsTrue(_dsky.Display.VerbNounFlashing, "VERB만 누른 것으로는 로드가 취소되지 않는다");
+        Assert.AreEqual("+001  ", _dsky.Display.R1, "입력 중이던 값도 그대로");
+    }
+
+    [TestMethod]
+    public void DigitsAfterVerbKey_GoToTheVerbWindowNotTheRegister()
+    {
+        _dsky.Press("V25N36EV3");
+
+        Assert.AreEqual("3 ", _dsky.Display.Verb);
+        Assert.AreEqual("      ", _dsky.Display.R1);
+        Assert.IsFalse(OprErr);
+    }
+
+    [TestMethod]
+    public void EnterWithIncompleteVerbOverride_LightsOprErrAndKeepsLoad()
+    {
+        _dsky.Press("V25N36EV3E");
+
+        Assert.IsTrue(OprErr);
+        Assert.IsTrue(_dsky.Display.VerbNounFlashing);
+    }
+
+    [TestMethod]
+    public void OtherVerbExecutedDuringLoad_ReplacesTheLoad()
+    {
+        _dsky.Press("V25N36E");
+
+        _dsky.Press("V16N36E");
+
+        var d = _dsky.Display;
+        Assert.IsFalse(d.VerbNounFlashing);
+        Assert.IsTrue(d.Lamps.HasFlag(DskyLamps.CompActy), "V16 모니터가 시작된다");
+        Assert.AreEqual("+00000", d.R1);
+    }
+
+    [TestMethod]
+    public void V37_CanBeCancelledWithV34()
+    {
+        var programs = new FakeProgramControl();
+        var dsky = new DskyController(_telemetry, _log, programs);
+
+        dsky.Press("V37E");
+        dsky.Press("V34E");
+
+        Assert.IsFalse(dsky.Display.VerbNounFlashing);
+        Assert.IsEmpty(programs.Requested);
+        Assert.IsFalse(dsky.Display.Lamps.HasFlag(DskyLamps.OprErr));
     }
 
     [TestMethod]

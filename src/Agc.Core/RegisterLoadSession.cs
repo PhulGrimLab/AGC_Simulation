@@ -13,7 +13,7 @@ internal sealed class RegisterLoadSession
     private const int VerbLoadR2 = 22;
     private const int VerbLoadR3 = 23;
     private const int VerbLoadR1R2 = 24;
-    private const int VerbLoadAll = 25;
+    internal const int VerbLoadAll = 25;
     private const int ComponentCount = 3;
     private const int DataDigits = 5;
     private const int CompleteLength = DataDigits + 1;

@@ -28,13 +28,11 @@ public sealed class DskyController
     private const int VerbTerminate = 34;
     private const int VerbLampTest = 35;
     private const int VerbProgramChange = 37;
-    private const int VerbLoadAllRegisters = 25;
     private const int FieldDigits = 2;
     private const int MaxStoredAlarms = 3;
     private const int RegisterCount = 3;
-    private const int MaxMinutes = 59;
-    private const int MaxCentiseconds = 5999;
-    private const int CentisecondsPerSecond = 100;
+    private const int MaxClockMinutes = 59;
+    private const int MaxClockCentiseconds = 5999;
     private const string LampTestField = "88";
     private const string LampTestRegister = "+88888";
 
@@ -70,6 +68,8 @@ public sealed class DskyController
     private string _verbText = string.Empty;
     private string _nounText = string.Empty;
     private int? _activeNoun;
+    // 로드/프로그램 번호 대기 중에 VERB 키로 새 Verb를 입력하는 중인지(V33/V34 응답 등). 이때 ENTR은 그 Verb를 실행한다.
+    private bool _verbOverride;
     private bool _isMonitoring;
     private bool _oprErr;
     private bool _progAlarm;
@@ -114,17 +114,27 @@ public sealed class DskyController
     private bool IsLampTestActive => _lampTestRemaining > TimeSpan.Zero;
 
     /// <summary>승무원이 DSKY를 사용 중인지(키 입력 중, 로드/프로그램 대기 중, 표시가 떠 있음).</summary>
-    private bool IsCrewUsingDisplay => _entry != EntryField.None || _mode != Mode.Idle || _activeNoun is not null;
+    private bool IsCrewUsingDisplay =>
+        _entry != EntryField.None || _mode != Mode.Idle || _activeNoun is not null || IsLampTestActive;
 
     /// <summary>
     /// 키 한 개를 누른다. 입력 상태에 맞지 않는 키는 OPR ERR 램프를 켠다.
     /// </summary>
     public void PressKey(DskyKey key)
     {
+        if (IsLampTestActive)
+        {
+            // 램프 테스트 중에는 모든 창이 테스트 패턴으로 덮여 있어 입력 결과를 볼 수 없다.
+            // 보이지 않는 상태 변경을 막기 위해 테스트가 끝날 때까지 키를 무시한다.
+            return;
+        }
+
         switch (key)
         {
             case DskyKey.Verb:
-                AbortMode();
+                // 로드/프로그램 번호 대기 중에는 V33(진행)/V34(종료)로 응답해야 하므로 대기를 취소하지 않고
+                // 새 Verb 입력만 받는다. 다른 Verb가 실행될 때 비로소 대기가 취소된다.
+                _verbOverride = _mode != Mode.Idle;
                 BeginEntry(EntryField.Verb);
                 break;
             case DskyKey.Noun:
@@ -279,6 +289,13 @@ public sealed class DskyController
 
     private void HandleDigit(int digit)
     {
+        if (_entry != EntryField.None)
+        {
+            // VERB/NOUN 창에 입력 중이면(로드 중 V33 응답 입력, V37 프로그램 번호 포함) 숫자는 그 창으로 간다.
+            EnterDigit(digit);
+            return;
+        }
+
         if (_mode == Mode.LoadingData && _load is not null)
         {
             if (_load.PressDigit(digit))
@@ -298,7 +315,7 @@ public sealed class DskyController
 
     private void HandleSign(char sign)
     {
-        if (_mode == Mode.LoadingData && _load is not null)
+        if (_entry == EntryField.None && _mode == Mode.LoadingData && _load is not null)
         {
             if (_load.PressSign(sign))
             {
@@ -318,7 +335,7 @@ public sealed class DskyController
 
     private void HandleClear()
     {
-        if (_mode == Mode.LoadingData && _load is not null)
+        if (_entry == EntryField.None && _mode == Mode.LoadingData && _load is not null)
         {
             _load.ClearCurrent();
             ShowLoadRegisters();
@@ -330,7 +347,12 @@ public sealed class DskyController
 
     private void HandleEnter()
     {
-        if (_mode == Mode.LoadingData)
+        if (_verbOverride)
+        {
+            // 로드/프로그램 번호 대기 중에 VERB 키로 입력한 Verb(V33, V34 등)를 실행한다.
+            ExecuteEntered();
+        }
+        else if (_mode == Mode.LoadingData)
         {
             AcceptLoadedRegister();
         }
@@ -373,6 +395,11 @@ public sealed class DskyController
         }
     }
 
+    /// <summary>
+    /// CLR: 입력 중인 VERB/NOUN 창(두 자리가 다 차기 전)을 지운다. 데이터 로드 중에는 현재 레지스터 입력을 지운다.
+    /// 두 자리가 완성된 Verb/Noun은 CLR로 고치지 않고 VERB/NOUN 키를 다시 눌러 새로 입력한다
+    /// (실제 DSKY의 CLR도 데이터 입력에만 작용한다).
+    /// </summary>
     private void ClearEntry()
     {
         if (_entry == EntryField.Verb)
@@ -427,6 +454,7 @@ public sealed class DskyController
     {
         var wasLoading = _load is not null;
         _mode = Mode.Idle;
+        _verbOverride = false;
         _load = null;
         if (wasLoading)
         {
@@ -446,6 +474,17 @@ public sealed class DskyController
         }
 
         _entry = EntryField.None;
+        _verbOverride = false;
+        if (verb is not (VerbProceed or VerbTerminate))
+        {
+            // 새 명령(V33/V34 이외)은 대기 중이던 로드/프로그램 번호 입력을 대체한다.
+            AbortMode();
+        }
+        else
+        {
+            // V33/V34는 대기 중인 입력에 대한 응답이므로 각 처리에서 다룬다.
+        }
+
         switch (verb)
         {
             case VerbLampTest:
@@ -516,6 +555,7 @@ public sealed class DskyController
     private void LeaveLampTestResidue()
     {
         AbortMode();
+        _entry = EntryField.None;
         _isMonitoring = false;
         _activeNoun = null;
         _verbText = LampTestField;
@@ -546,11 +586,14 @@ public sealed class DskyController
         Proceed();
     }
 
-    /// <summary>V34: 진행 중인 입력/요청 표시를 종료한다.</summary>
+    /// <summary>V34: 진행 중인 입력, 깜박이는 요청 표시, 모니터를 종료한다. 이미 표시된 값은 화면에 남는다.</summary>
     private void Terminate()
     {
         AbortMode();
         _requestFlash = false;
+        _isMonitoring = false;
+        // 표시를 더 이상 쓰는 중이 아니므로 이후 프로그램 표시 요청은 KEY REL 없이 바로 나타난다.
+        _activeNoun = null;
         _log.Info("V34 terminate");
     }
 
@@ -564,7 +607,7 @@ public sealed class DskyController
             return;
         }
 
-        if (noun == DskyNouns.ClockTime && verb != VerbLoadAllRegisters)
+        if (noun == DskyNouns.ClockTime && verb != RegisterLoadSession.VerbLoadAll)
         {
             // 시/분/초 Noun은 3개 워드를 모두 로드해야 한다(원본: 그렇지 않으면 알람).
             RaiseOperatorError("clock noun requires loading all 3 registers (V25)");
@@ -625,7 +668,7 @@ public sealed class DskyController
         var hours = int.Parse(values[0]!);
         var minutes = int.Parse(values[1]!);
         var centiseconds = int.Parse(values[2]!);
-        if (hours < 0 || minutes is < 0 or > MaxMinutes || centiseconds is < 0 or > MaxCentiseconds)
+        if (hours < 0 || minutes is < 0 or > MaxClockMinutes || centiseconds is < 0 or > MaxClockCentiseconds)
         {
             // 범위를 벗어난 시계 값: 오류를 알리고 처음부터 다시 입력받는다.
             RaiseOperatorError($"invalid clock value {hours}:{minutes}:{centiseconds}");
@@ -635,7 +678,7 @@ public sealed class DskyController
         }
 
         var loaded = TimeSpan.FromHours(hours) + TimeSpan.FromMinutes(minutes)
-            + TimeSpan.FromMilliseconds(centiseconds * (1000.0 / CentisecondsPerSecond));
+            + TimeSpan.FromMilliseconds(centiseconds * DskyNouns.MillisecondsPerCentisecond);
         _clockOffset = loaded - _telemetry.Current.MissionElapsedTime;
         _mode = Mode.Idle;
         _load = null;

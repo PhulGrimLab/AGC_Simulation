@@ -82,6 +82,20 @@ public sealed class MissionSimulatorTests
     }
 
     [TestMethod]
+    public void AlarmHandler_SeesTheMissionTimeAfterTheStep()
+    {
+        TimeSpan? metSeenByHandler = null;
+        _sim.AlarmRaised += _ => metSeenByHandler = _sim.Met;
+        _sim.Seek(new TimeSpan(102, 38, 0));
+        _sim.IsRunning = true;
+        _sim.SpeedMultiplier = 60;
+
+        _sim.Advance(OneSecond);
+
+        Assert.AreEqual(new TimeSpan(102, 39, 0), metSeenByHandler, "알람 핸들러는 이미 갱신된 MET를 보아야 한다");
+    }
+
+    [TestMethod]
     public void Seek_PastAlarms_DoesNotRaiseThem()
     {
         var raised = 0;

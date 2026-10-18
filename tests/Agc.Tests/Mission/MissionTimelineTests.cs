@@ -131,6 +131,32 @@ public sealed class MissionTimelineTests
     }
 
     [TestMethod]
+    public void Snapshot_Longitude_InterpolatesAlongTheShortestPathAcrossTheDateLine()
+    {
+        var a = new MissionKeyframe(TimeSpan.Zero, "a", "d", 0, CelestialBody.Earth, 0, 0, 0, 170);
+        var b = new MissionKeyframe(TimeSpan.FromSeconds(100), "b", "d", 0, CelestialBody.Earth, 0, 0, 0, -170);
+        var timeline = new MissionTimeline([a, b], []);
+
+        var quarter = timeline.GetSnapshot(TimeSpan.FromSeconds(25)).Telemetry.LongitudeDegrees;
+        var half = timeline.GetSnapshot(TimeSpan.FromSeconds(50)).Telemetry.LongitudeDegrees;
+        var threeQuarters = timeline.GetSnapshot(TimeSpan.FromSeconds(75)).Telemetry.LongitudeDegrees;
+
+        Assert.AreEqual(175, quarter, 1e-9);
+        Assert.AreEqual(180, Math.Abs(half), 1e-9, "날짜 변경선을 지난다(0 경도를 가로지르지 않는다)");
+        Assert.AreEqual(-175, threeQuarters, 1e-9);
+    }
+
+    [TestMethod]
+    public void Snapshot_Longitude_NormalInterpolationIsUnchanged()
+    {
+        var a = new MissionKeyframe(TimeSpan.Zero, "a", "d", 0, CelestialBody.Earth, 0, 0, 0, -80);
+        var b = new MissionKeyframe(TimeSpan.FromSeconds(100), "b", "d", 0, CelestialBody.Earth, 0, 0, 0, -20);
+        var timeline = new MissionTimeline([a, b], []);
+
+        Assert.AreEqual(-50, timeline.GetSnapshot(TimeSpan.FromSeconds(50)).Telemetry.LongitudeDegrees, 1e-9);
+    }
+
+    [TestMethod]
     public void Alarms_AreSortedByMet()
     {
         var timeline = new MissionTimeline(

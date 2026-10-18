@@ -142,18 +142,18 @@ dotnet test tests/Agc.Tests --filter "FullyQualifiedName~Dsky"   # 일부만
 2. `src/Agc.Wpf/bin/Debug/net10.0-windows/Agc.Wpf.exe` 실행 → 창이 뜨고 5초 후에도 응답하는지 확인
 3. 창 닫기 → `logs/agc-*.log`에 시작/종료 로그가 있는지 확인
 
-### 5.3 테스트 케이스 목록 (M1+M2: 총 134개, 모두 통과)
+### 5.3 테스트 케이스 목록 (M1+M2+코드리뷰 수정: 총 147개, 모두 통과)
 
 | 기능 | 테스트 클래스 (파일) | 개수 | 검증 내용 |
 |---|---|---|---|
 | Noun 표시 형식 | `DskyNounFormatTests` | 11 | 십진 항상 부호/5자리, 99999 클램프, 반올림, 8진 부호 공백, MIN/SEC(XXbXX), N36 시·분·초×100, N43 단위, N63 0.1 ft/s·ft 변환, N68, 미지원 Noun(N62 포함), 지원 Noun 판별 |
 | 키 입력 상태기계 | `DskyEntryTests` | 12 | 초기 화면, PROG가 텔레메트리 추종, V/N 자리 입력, 재입력 시 지움, CLR, VERB 없는 숫자/3번째 숫자/미완성 ENTR/부호 키 → OPR ERR, RSET, PRO |
 | DSKY 명령 실행 | `DskyCommandTests` | 16 | V35(전체 점등/5초 후 해제), V16 연속 갱신·COMP ACTY, V06 고정, N63·N68 값, 미지원 N62/N99/V99/V05N36/명령 누락 → OPR ERR, 실행 로그, KEY REL, 알람 램프/RSET, V05N09 최신순·최대 3개·즉시 갱신 |
-| 미션 타임라인 | `MissionTimelineTests` | 13 | 빈/비증가 키프레임 예외, Duration, MET 클램프, 선형 보간, 천체 변경 구간 유지, 마지막 키프레임, 단계별 프로그램, 알람 정렬, 다음 단계까지 시간, 목표 없음/다른 천체/대원 거리 사거리 |
-| 데이터 로드 | `DskyDataLoadTests` | 17 | V25N36 로드 시작·깜박임·빈 레지스터, 입력 중 표시, 3개 레지스터 로드로 시계 설정, 설정한 시계가 계속 흐름, 음수/분 범위/부호 없는 숫자/중복 부호/6번째 숫자/미완성 ENTR → OPR ERR, CLR, V21N36 거부, 로드 불가 Noun, V34 종료, V33 진행, VERB 키 중단, 로드 중 PRO 무시 |
-| 프로그램/요청 표시 | `DskyProgramAndDisplayRequestTests` | 17 | V37(번호 대기·깜박임·NOUN 창 에코·요청 전달·거부·제어 없음·1자리 ENTR·NOUN 키 중단), V35 깜박임과 종료 후 88, KEY REL로 잔여 삭제, V16 1초 갱신, 깜박임 없음, 표시 요청(즉시/PRO 응답/입력 중 KEY REL 램프/모니터 중/KEY REL로 표시/미지원/V34) |
+| 미션 타임라인 | `MissionTimelineTests` | 15 | 빈/비증가 키프레임 예외, Duration, MET 클램프, 선형 보간, 천체 변경 구간 유지, 마지막 키프레임, 단계별 프로그램, 알람 정렬, 다음 단계까지 시간, 목표 없음/다른 천체/대원 거리 사거리 |
+| 데이터 로드 | `DskyDataLoadTests` | 22 | V25N36 로드 시작·깜박임·빈 레지스터, 입력 중 표시, 3개 레지스터 로드로 시계 설정, 설정한 시계가 계속 흐름, 음수/분 범위/부호 없는 숫자/중복 부호/6번째 숫자/미완성 ENTR → OPR ERR, CLR, V21N36 거부, 로드 불가 Noun, V34 종료, V33 진행, VERB 키 중단, 로드 중 PRO 무시 |
+| 프로그램/요청 표시 | `DskyProgramAndDisplayRequestTests` | 19 | V37(번호 대기·깜박임·NOUN 창 에코·요청 전달·거부·제어 없음·1자리 ENTR·NOUN 키 중단), V35 깜박임과 종료 후 88, KEY REL로 잔여 삭제, V16 1초 갱신, 깜박임 없음, 표시 요청(즉시/PRO 응답/입력 중 KEY REL 램프/모니터 중/KEY REL로 표시/미지원/V34) |
 | Apollo 11 데이터 | `Apollo11MissionDataTests` | 9 | 시작 P11, 끝 195:18:35 착수, 값/설명 유효성, PDI=P63, 하강 고도 단조 감소, 착륙 102:45:40=P68·0m·0m/s, PDI 사거리 240~270 nm·착륙 시 0, PDI 제동 잔여 8분 27초, 알람 5개(1202×4+1201×1, 1201은 P64 이후)가 하강 프로그램 중 발생 |
-| 시뮬레이터 | `MissionSimulatorTests` | 14 | 정지 시 무진행, 배속, 끝 도달 시 정지, Seek 클램프, Current 갱신, 알람 1회 발생/Seek는 미발생/여러 알람 순서(1202,1202,1201,1202,1202), 단계 전환 이벤트, 단계 로그, V37 요청(허용/거부/단계 전환 시 대체/같은 단계 유지) |
+| 시뮬레이터 | `MissionSimulatorTests` | 15 | 정지 시 무진행, 배속, 끝 도달 시 정지, Seek 클램프, Current 갱신, 알람 1회 발생/Seek는 미발생/여러 알람 순서(1202,1202,1201,1202,1202), 단계 전환 이벤트, 단계 로그, V37 요청(허용/거부/단계 전환 시 대체/같은 단계 유지) |
 | 미션↔DSKY 연동 | `AgcMissionIntegrationTests` | 7 | PROG 창이 단계 추종, N36=MET, N63 하강 추적(고도 감소·하강률 음수), N68 사거리/잔여시간, 하강 알람 → PROG 램프 + V05N09 + RSET, V37E00E로 PROG 변경 후 다음 단계에서 복귀, 미지원 프로그램 거부 |
 | 비동기 로거 | `AsyncFileLoggerTests` | 4 | Dispose 시 flush·레벨 표기, Dispose 이후 안전, 200줄 다중 스레드 무손실, NullLog |
 | DSKY UI | `DskyPanelUiTests` | 14 | V/N 깜박임 위상(깜박일 때만, 종료 시 복귀), 7-세그먼트 8>1·공백 무점등·`+`>`-`, 패널 Display 반영, 램프 색(흰/호박/녹), **램프 패널 2열×14칸 순서, 숫자 표시 5줄 순서, 키패드 19키 좌표(7열·반 칸 오프셋·중앙 정렬), 키가 정사각형**, 키→DskyKey 매핑, 버튼 포커스 미탈취, 렌더 픽셀 검증(값 유무에 따른 점등) |

@@ -26,11 +26,11 @@ internal static class DskyNouns
     private const double MetersPerNauticalMile = 1852.0;
     private const double HundredthScale = 100.0;
     private const double TenthScale = 10.0;
-    private const int MillisecondsPerCentisecond = 10;
-    private const int CentisecondsPerSecond = 100;
+    internal const int MillisecondsPerCentisecond = 10;
+    internal const int CentisecondsPerSecond = 100;
     private const int SecondsPerMinute = 60;
     private const int MaxRegisterValue = 99999;
-    private const int MaxMinutes = 99;
+    private const int MaxMinSecMinutes = 99;
     private const int RegisterDigits = 5;
 
     /// <summary>데이터 로드(V21~V25)로 값을 바꿀 수 있는 Noun인지. 현재는 AGC 시계(N36)만 지원한다.</summary>
@@ -105,7 +105,7 @@ internal static class DskyNouns
     public static string FormatMinSec(TimeSpan time)
     {
         var totalSeconds = (int)Math.Round(Math.Max(time.TotalSeconds, 0));
-        var minutes = Math.Min(totalSeconds / SecondsPerMinute, MaxMinutes);
+        var minutes = Math.Min(totalSeconds / SecondsPerMinute, MaxMinSecMinutes);
         var seconds = totalSeconds % SecondsPerMinute;
         return $"+{minutes:D2} {seconds:D2}";
     }

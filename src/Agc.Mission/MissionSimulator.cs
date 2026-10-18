@@ -88,12 +88,14 @@ public sealed class MissionSimulator : ITelemetrySource, IProgramControl
             // 아직 미션 끝이 아니므로 계속 진행한다.
         }
 
-        foreach (var alarm in _timeline.Alarms.Where(a => a.Met > oldMet && a.Met <= newMet))
+        // 이번 구간에서 지나간 알람을 먼저 고르고, 상태를 새 MET로 갱신한 뒤에 알린다.
+        // (핸들러가 로그/표시 갱신에 쓰는 현재 MET와 단계가 이미 최신이어야 한다.)
+        var crossedAlarms = _timeline.Alarms.Where(a => a.Met > oldMet && a.Met <= newMet).ToList();
+        MoveTo(newMet);
+        foreach (var alarm in crossedAlarms)
         {
             AlarmRaised?.Invoke(alarm);
         }
-
-        MoveTo(newMet);
     }
 
     /// <summary>지정한 MET로 이동한다(0~Duration으로 제한). 알람은 발생시키지 않는다.</summary>

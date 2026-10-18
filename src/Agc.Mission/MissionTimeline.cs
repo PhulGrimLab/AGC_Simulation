@@ -47,6 +47,8 @@ public sealed class MissionTimeline
     private const double MoonRadiusMeters = 1_737_400.0;
     private const double EarthRadiusMeters = 6_371_000.0;
     private const double DegreesToRadians = Math.PI / 180.0;
+    private const double HalfTurnDegrees = 180.0;
+    private const double FullTurnDegrees = 360.0;
 
     private readonly MissionTarget? _target;
 
@@ -100,7 +102,7 @@ public sealed class MissionTimeline
             altitude = Lerp(current.AltitudeMeters, next.AltitudeMeters, fraction);
             speed = Lerp(current.SpeedMetersPerSecond, next.SpeedMetersPerSecond, fraction);
             latitude = Lerp(current.LatitudeDegrees, next.LatitudeDegrees, fraction);
-            longitude = Lerp(current.LongitudeDegrees, next.LongitudeDegrees, fraction);
+            longitude = LerpLongitude(current.LongitudeDegrees, next.LongitudeDegrees, fraction);
             verticalSpeed = (next.AltitudeMeters - current.AltitudeMeters) / span;
         }
         else
@@ -152,6 +154,17 @@ public sealed class MissionTimeline
         var cosAngle = Math.Sin(lat1) * Math.Sin(lat2) + Math.Cos(lat1) * Math.Cos(lat2) * Math.Cos(dLon);
         var ground = radius * Math.Acos(Math.Clamp(cosAngle, -1.0, 1.0));
         return Math.Sqrt(ground * ground + altitude * altitude);
+    }
+
+    /// <summary>
+    /// 경도 보간: 두 경도 사이의 짧은 쪽 경로를 따라 보간하고 결과를 [-180, 180)로 정규화한다.
+    /// (예: 170° → -170°는 0°를 가로지르지 않고 날짜 변경선을 지난다.)
+    /// </summary>
+    private static double LerpLongitude(double from, double to, double fraction)
+    {
+        var delta = ((to - from + HalfTurnDegrees * 3) % FullTurnDegrees) - HalfTurnDegrees;
+        var result = from + delta * fraction;
+        return ((result + HalfTurnDegrees) % FullTurnDegrees + FullTurnDegrees) % FullTurnDegrees - HalfTurnDegrees;
     }
 
     private static double Lerp(double a, double b, double fraction)
