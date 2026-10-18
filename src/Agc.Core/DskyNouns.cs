@@ -33,6 +33,12 @@ internal static class DskyNouns
     private const int MaxMinutes = 99;
     private const int RegisterDigits = 5;
 
+    /// <summary>데이터 로드(V21~V25)로 값을 바꿀 수 있는 Noun인지. 현재는 AGC 시계(N36)만 지원한다.</summary>
+    public static bool IsLoadable(int noun)
+    {
+        return noun == ClockTime;
+    }
+
     /// <summary>텔레메트리로 값을 만드는 Noun(36/43/63/68)인지.</summary>
     public static bool IsTelemetryNoun(int noun)
     {

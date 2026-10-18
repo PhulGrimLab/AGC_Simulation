@@ -37,8 +37,10 @@ public partial class DskyPanel : UserControl
         return brush;
     }
 
-    private static readonly Brush LampOffBackground = FrozenBrush(Color.FromRgb(0x20, 0x22, 0x26));
-    private static readonly Brush LampOffForeground = FrozenBrush(Color.FromRgb(0x6F, 0x74, 0x7B));
+    private static readonly Brush LampOffBackground = FrozenBrush(Color.FromRgb(0xB4, 0xB8, 0xB5));
+    private static readonly Brush LampOffForeground = FrozenBrush(Color.FromRgb(0x2A, 0x2D, 0x30));
+    private static readonly Brush LampGreenOffBackground = FrozenBrush(Color.FromRgb(0x1F, 0x5A, 0x35));
+    private static readonly Brush LampGreenOffForeground = FrozenBrush(Color.FromRgb(0x0A, 0x2A, 0x15));
     private static readonly Brush LampWhite = FrozenBrush(Color.FromRgb(0xF2, 0xF2, 0xF2));
     private static readonly Brush LampAmber = FrozenBrush(Color.FromRgb(0xFF, 0xB0, 0x00));
     private static readonly Brush LampGreen = FrozenBrush(Color.FromRgb(0x4B, 0xE0, 0x8E));
@@ -86,11 +88,49 @@ public partial class DskyPanel : UserControl
 
     private readonly Dictionary<DskyLamps, (Border Box, TextBlock Text, LampColor Color)> _lamps = [];
 
+    /// <summary>VERB/NOUN 깜박임의 켜짐/꺼짐 전환 주기(실제 DSKY는 초당 약 1.5회 깜박인다).</summary>
+    private static readonly TimeSpan FlashToggleInterval = TimeSpan.FromMilliseconds(330);
+
+    private readonly System.Windows.Threading.DispatcherTimer _flashTimer;
+    private bool _flashOn = true;
+
     public DskyPanel()
     {
         InitializeComponent();
         BuildLamps();
         BuildKeypad();
+
+        _flashTimer = new System.Windows.Threading.DispatcherTimer { Interval = FlashToggleInterval };
+        _flashTimer.Tick += (_, _) => AdvanceFlashPhase();
+        Loaded += (_, _) => _flashTimer.Start();
+        Unloaded += (_, _) => _flashTimer.Stop();
+    }
+
+    /// <summary>
+    /// 깜박임 위상을 한 단계 넘긴다(켜짐↔꺼짐). 타이머가 주기적으로 호출하며 테스트에서도 직접 호출한다.
+    /// 깜박이는 표시가 아니면 VERB/NOUN은 항상 켜져 있다.
+    /// </summary>
+    public void AdvanceFlashPhase()
+    {
+        _flashOn = !_flashOn;
+        ApplyFlashVisibility();
+    }
+
+    private void ApplyFlashVisibility()
+    {
+        var flashing = Display?.VerbNounFlashing == true;
+        if (!flashing)
+        {
+            _flashOn = true;
+        }
+        else
+        {
+            // 깜박이는 중에는 현재 위상(_flashOn)을 그대로 사용한다.
+        }
+
+        var opacity = _flashOn ? 1.0 : 0.0;
+        VerbDisplay.Opacity = opacity;
+        NounDisplay.Opacity = opacity;
     }
 
     /// <summary>키패드 버튼이 눌렸을 때 발생한다.</summary>
@@ -128,13 +168,13 @@ public partial class DskyPanel : UserControl
             FontWeight = FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = LampOffForeground,
+            Foreground = OffForeground(color),
         };
         var box = new Border
         {
             Margin = new Thickness(2),
             CornerRadius = new CornerRadius(2),
-            Background = LampOffBackground,
+            Background = OffBackground(color),
             Child = text,
         };
         _lamps[flag] = (box, text, color);
@@ -186,13 +226,25 @@ public partial class DskyPanel : UserControl
         R1Display.Text = display.R1;
         R2Display.Text = display.R2;
         R3Display.Text = display.R3;
+        ApplyFlashVisibility();
 
         foreach (var (flag, lamp) in _lamps)
         {
             var on = display.Lamps.HasFlag(flag);
-            lamp.Box.Background = on ? OnBrush(lamp.Color) : LampOffBackground;
-            lamp.Text.Foreground = on ? LampOnForeground : LampOffForeground;
+            lamp.Box.Background = on ? OnBrush(lamp.Color) : OffBackground(lamp.Color);
+            lamp.Text.Foreground = on ? LampOnForeground : OffForeground(lamp.Color);
         }
+    }
+
+    /// <summary>꺼진 램프의 바탕: 우윳빛 연회색 창(COMP ACTY는 어두운 녹색 박스).</summary>
+    private static Brush OffBackground(LampColor color)
+    {
+        return color == LampColor.Green ? LampGreenOffBackground : LampOffBackground;
+    }
+
+    private static Brush OffForeground(LampColor color)
+    {
+        return color == LampColor.Green ? LampGreenOffForeground : LampOffForeground;
     }
 
     private static Brush OnBrush(LampColor color)

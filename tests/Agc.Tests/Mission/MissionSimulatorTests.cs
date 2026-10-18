@@ -103,7 +103,7 @@ public sealed class MissionSimulatorTests
 
         _sim.Advance(TimeSpan.FromSeconds(10));
 
-        CollectionAssert.AreEqual(new[] { 1202, 1201, 1202, 1202 }, raised);
+        CollectionAssert.AreEqual(new[] { 1202, 1202, 1201, 1202, 1202 }, raised);
     }
 
     [TestMethod]
@@ -120,6 +120,48 @@ public sealed class MissionSimulatorTests
         _sim.Advance(TimeSpan.FromSeconds(100));
         Assert.HasCount(1, phases);
         Assert.AreEqual("1단 분리", phases[0]);
+    }
+
+    [TestMethod]
+    public void TryRequestProgram_KnownProgram_OverridesCurrentProgramNumber()
+    {
+        _sim.Seek(new TimeSpan(102, 33, 5));
+
+        Assert.IsTrue(_sim.TryRequestProgram(66));
+
+        Assert.AreEqual(66, _sim.Current.ProgramNumber);
+        Assert.AreEqual(63, _sim.Snapshot.Phase.ProgramNumber, "단계 자체의 프로그램은 그대로");
+    }
+
+    [TestMethod]
+    public void TryRequestProgram_P00IsAlwaysAllowed_UnknownProgramRejected()
+    {
+        Assert.IsTrue(_sim.TryRequestProgram(0));
+        Assert.IsFalse(_sim.TryRequestProgram(99));
+    }
+
+    [TestMethod]
+    public void RequestedProgram_IsReplacedWhenMissionEntersNextPhase()
+    {
+        _sim.Seek(new TimeSpan(102, 33, 5));
+        _sim.TryRequestProgram(0);
+
+        _sim.Seek(new TimeSpan(102, 41, 32));
+
+        Assert.AreEqual(64, _sim.Current.ProgramNumber);
+    }
+
+    [TestMethod]
+    public void RequestedProgram_StaysWhileInsideSamePhase()
+    {
+        _sim.Seek(new TimeSpan(102, 33, 5));
+        _sim.TryRequestProgram(0);
+        _sim.IsRunning = true;
+        _sim.SpeedMultiplier = 60;
+
+        _sim.Advance(TimeSpan.FromSeconds(5));
+
+        Assert.AreEqual(0, _sim.Current.ProgramNumber);
     }
 
     [TestMethod]

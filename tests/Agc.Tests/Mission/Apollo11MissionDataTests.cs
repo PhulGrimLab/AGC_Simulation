@@ -93,7 +93,11 @@ public sealed class Apollo11MissionDataTests
     [TestMethod]
     public void DescentAlarms_FallDuringDescentPrograms()
     {
-        Assert.HasCount(4, Timeline.Alarms);
+        // 공개 기록: 1202 4회 + 1201 1회. 1201은 P64 진입 후(102:41:32 이후)에 발생했다.
+        Assert.HasCount(5, Timeline.Alarms);
+        Assert.AreEqual(4, Timeline.Alarms.Count(a => a.Code == 1202));
+        Assert.AreEqual(1, Timeline.Alarms.Count(a => a.Code == 1201));
+        Assert.IsGreaterThan(new TimeSpan(102, 41, 32), Timeline.Alarms.Single(a => a.Code == 1201).Met);
         foreach (var alarm in Timeline.Alarms)
         {
             var program = Timeline.GetSnapshot(alarm.Met).Telemetry.ProgramNumber;

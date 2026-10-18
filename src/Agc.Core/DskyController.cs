@@ -6,25 +6,43 @@ namespace Agc.Core;
 /// - Owner: UI 스레드(MainWindow)가 생성하고 소유한다.
 /// - Lifetime: 앱 실행 동안 하나만 존재한다.
 /// - 스레드: 단일 스레드(UI)에서만 호출한다. 내부 동기화는 없다.
-/// 지원 Verb: 05(알람 코드 표시, Noun 09), 06(1회 표시), 16(연속 모니터), 35(램프 테스트).
-/// 지원 Noun: 09(알람, 8진), 36(MET), 43(위도/경도/고도), 63(속도/고도변화율/계산 고도), 68(착륙지점 사거리/제동 잔여시간).
+///
+/// 지원 Verb
+///   05 알람 코드 표시(N09)            06 Noun 1회 표시       16 Noun 연속 모니터(1초 갱신)
+///   21~25 데이터 로드(R1/R2/R3/R1R2/R1R2R3; 현재 N36 시계만)
+///   33 진행(PRO와 같은 응답)          34 종료(진행 중인 입력/표시 취소)
+///   35 램프 테스트(약 5초, V/N 깜박임, 종료 후 88 표시가 남음)   37 프로그램 변경(요청은 <see cref="IProgramControl"/>로 전달)
+/// 지원 Noun: 09(알람, 8진), 36(시계), 43(위도/경도/고도), 63(속도/고도변화율/계산 고도), 68(착륙지점 사거리/제동 잔여시간).
 /// Noun 정의는 DskyNouns를 참고한다.
+///
+/// 깜박임(VerbNounFlashing): 램프 테스트, 데이터 로드 대기, V37 프로그램 번호 대기, 깜박임 요청 표시 중.
+/// KEY REL 램프: 프로그램이 표시를 요청(<see cref="RequestDisplay"/>)했지만 승무원이 DSKY를 사용 중일 때 켜지며,
+/// KEY REL 키로 사용 중인 표시를 놓으면 대기 중이던 요청이 나타난다.
 /// </summary>
 public sealed class DskyController
 {
     private const int VerbAlarmDisplay = 5;
     private const int VerbDisplayOnce = 6;
     private const int VerbMonitor = 16;
+    private const int VerbProceed = 33;
+    private const int VerbTerminate = 34;
     private const int VerbLampTest = 35;
+    private const int VerbProgramChange = 37;
+    private const int VerbLoadAllRegisters = 25;
     private const int FieldDigits = 2;
     private const int MaxStoredAlarms = 3;
     private const int RegisterCount = 3;
-    private const string BlankField = "  ";
+    private const int MaxMinutes = 59;
+    private const int MaxCentiseconds = 5999;
+    private const int CentisecondsPerSecond = 100;
     private const string LampTestField = "88";
     private const string LampTestRegister = "+88888";
 
     /// <summary>V35 램프 테스트 유지 시간(실제 AGC도 약 5초).</summary>
     public static readonly TimeSpan LampTestDuration = TimeSpan.FromSeconds(5);
+
+    /// <summary>V16 모니터가 레지스터를 갱신하는 주기(실제 AGC는 1초마다 갱신).</summary>
+    public static readonly TimeSpan MonitorRefreshInterval = TimeSpan.FromSeconds(1);
 
     private enum EntryField
     {
@@ -33,23 +51,41 @@ public sealed class DskyController
         Noun,
     }
 
+    /// <summary>키 입력을 해석하는 방식: 일반, 데이터 로드 중, V37 프로그램 번호 대기 중.</summary>
+    private enum Mode
+    {
+        Idle,
+        LoadingData,
+        AwaitingProgram,
+    }
+
     private readonly ITelemetrySource _telemetry;
     private readonly ILog _log;
+    private readonly IProgramControl? _programs;
     private readonly List<int> _alarmCodes = [];
     private string[] _registers = NewBlankRegisters();
     private EntryField _entry = EntryField.None;
+    private Mode _mode = Mode.Idle;
+    private RegisterLoadSession? _load;
     private string _verbText = string.Empty;
     private string _nounText = string.Empty;
     private int? _activeNoun;
     private bool _isMonitoring;
     private bool _oprErr;
     private bool _progAlarm;
+    private bool _keyRelLamp;
+    private bool _requestFlash;
+    private (int Verb, int Noun, bool Flash)? _pendingRequest;
+    private TimeSpan _clockOffset = TimeSpan.Zero;
+    private TimeSpan _sinceMonitorRefresh = TimeSpan.Zero;
     private TimeSpan _lampTestRemaining = TimeSpan.Zero;
 
-    public DskyController(ITelemetrySource telemetry, ILog log)
+    /// <param name="programs">V37 요청을 받아 줄 쪽. null이면 V37은 지원되지 않는다(OPR ERR).</param>
+    public DskyController(ITelemetrySource telemetry, ILog log, IProgramControl? programs = null)
     {
         _telemetry = telemetry;
         _log = log;
+        _programs = programs;
     }
 
     /// <summary>현재 화면 스냅샷. PROG 창은 항상 현재 텔레메트리의 프로그램 번호를 따른다.</summary>
@@ -62,7 +98,7 @@ public sealed class DskyController
                 return new DskyDisplay(
                     LampTestField, LampTestField, LampTestField,
                     LampTestRegister, LampTestRegister, LampTestRegister,
-                    DskyLamps.All);
+                    DskyLamps.All, VerbNounFlashing: true);
             }
 
             return new DskyDisplay(
@@ -70,11 +106,15 @@ public sealed class DskyController
                 _verbText.PadRight(FieldDigits),
                 _nounText.PadRight(FieldDigits),
                 _registers[0], _registers[1], _registers[2],
-                BuildLamps());
+                BuildLamps(),
+                VerbNounFlashing: _mode != Mode.Idle || _requestFlash);
         }
     }
 
     private bool IsLampTestActive => _lampTestRemaining > TimeSpan.Zero;
+
+    /// <summary>승무원이 DSKY를 사용 중인지(키 입력 중, 로드/프로그램 대기 중, 표시가 떠 있음).</summary>
+    private bool IsCrewUsingDisplay => _entry != EntryField.None || _mode != Mode.Idle || _activeNoun is not null;
 
     /// <summary>
     /// 키 한 개를 누른다. 입력 상태에 맞지 않는 키는 OPR ERR 램프를 켠다.
@@ -84,16 +124,18 @@ public sealed class DskyController
         switch (key)
         {
             case DskyKey.Verb:
+                AbortMode();
                 BeginEntry(EntryField.Verb);
                 break;
             case DskyKey.Noun:
+                AbortMode();
                 BeginEntry(EntryField.Noun);
                 break;
             case DskyKey.Enter:
-                ExecuteEntered();
+                HandleEnter();
                 break;
             case DskyKey.Clear:
-                ClearEntry();
+                HandleClear();
                 break;
             case DskyKey.Reset:
                 _oprErr = false;
@@ -103,32 +145,40 @@ public sealed class DskyController
                 ReleaseDisplay();
                 break;
             case DskyKey.Proceed:
-                // 이 단계에서는 PRO가 응답할 대기 상태(깜박임 요청)가 없으므로 의도적으로 아무 일도 하지 않는다.
+                Proceed();
                 break;
             case DskyKey.Plus:
             case DskyKey.Minus:
-                // 데이터 입력(Load verb)을 아직 지원하지 않으므로 부호 키는 잘못된 입력이다.
-                RaiseOperatorError("sign key without data entry");
+                HandleSign(key == DskyKey.Plus ? '+' : '-');
                 break;
             default:
-                EnterDigit((int)key);
+                HandleDigit((int)key);
                 break;
         }
     }
 
     /// <summary>
-    /// 실제 경과 시간을 반영한다: 램프 테스트 카운트다운, 모니터(V16) 레지스터 갱신.
+    /// 실제 경과 시간을 반영한다: 램프 테스트 카운트다운, 모니터(V16) 레지스터 갱신(1초 주기).
     /// </summary>
     public void Update(TimeSpan elapsed)
     {
         if (IsLampTestActive)
         {
             _lampTestRemaining -= elapsed;
+            if (!IsLampTestActive)
+            {
+                LeaveLampTestResidue();
+            }
         }
 
         if (_isMonitoring)
         {
-            RefreshRegisters();
+            _sinceMonitorRefresh += elapsed;
+            if (_sinceMonitorRefresh >= MonitorRefreshInterval)
+            {
+                _sinceMonitorRefresh = TimeSpan.Zero;
+                RefreshRegisters();
+            }
         }
     }
 
@@ -152,6 +202,33 @@ public sealed class DskyController
         }
     }
 
+    /// <summary>
+    /// 프로그램(AGC 쪽)이 표시를 요청한다. 승무원이 DSKY를 쓰고 있지 않으면 바로 표시하고,
+    /// 쓰고 있으면 KEY REL 램프를 켜서 알린 뒤 승무원이 KEY REL을 누르면 표시한다.
+    /// </summary>
+    /// <param name="verb">05, 06, 16 중 하나.</param>
+    /// <param name="noun">해당 Verb가 허용하는 Noun.</param>
+    /// <param name="flash">true이면 V/N을 깜박여 응답(PRO)을 요청한다.</param>
+    public void RequestDisplay(int verb, int noun, bool flash)
+    {
+        if (verb is not (VerbAlarmDisplay or VerbDisplayOnce or VerbMonitor) || !IsNounAllowed(verb, noun))
+        {
+            _log.Warn($"Ignored display request V{verb:D2} N{noun:D2}");
+            return;
+        }
+
+        if (IsCrewUsingDisplay)
+        {
+            _pendingRequest = (verb, noun, flash);
+            _keyRelLamp = true;
+            _log.Info($"Display request V{verb:D2} N{noun:D2} waiting for KEY REL");
+        }
+        else
+        {
+            PresentRequest(verb, noun, flash);
+        }
+    }
+
     private static string[] NewBlankRegisters()
     {
         return [DskyNouns.BlankRegister, DskyNouns.BlankRegister, DskyNouns.BlankRegister];
@@ -168,6 +245,11 @@ public sealed class DskyController
         if (_progAlarm)
         {
             lamps |= DskyLamps.Prog;
+        }
+
+        if (_keyRelLamp)
+        {
+            lamps |= DskyLamps.KeyRel;
         }
 
         if (_isMonitoring)
@@ -190,6 +272,75 @@ public sealed class DskyController
         else
         {
             _nounText = string.Empty;
+        }
+    }
+
+    // ---- 키 처리 ----
+
+    private void HandleDigit(int digit)
+    {
+        if (_mode == Mode.LoadingData && _load is not null)
+        {
+            if (_load.PressDigit(digit))
+            {
+                ShowLoadRegisters();
+            }
+            else
+            {
+                RaiseOperatorError("load digit without sign or beyond 5 digits");
+            }
+
+            return;
+        }
+
+        EnterDigit(digit);
+    }
+
+    private void HandleSign(char sign)
+    {
+        if (_mode == Mode.LoadingData && _load is not null)
+        {
+            if (_load.PressSign(sign))
+            {
+                ShowLoadRegisters();
+            }
+            else
+            {
+                RaiseOperatorError("unexpected sign during load");
+            }
+
+            return;
+        }
+
+        // 데이터를 받는 중이 아니므로 부호 키는 잘못된 입력이다.
+        RaiseOperatorError("sign key without data entry");
+    }
+
+    private void HandleClear()
+    {
+        if (_mode == Mode.LoadingData && _load is not null)
+        {
+            _load.ClearCurrent();
+            ShowLoadRegisters();
+            return;
+        }
+
+        ClearEntry();
+    }
+
+    private void HandleEnter()
+    {
+        if (_mode == Mode.LoadingData)
+        {
+            AcceptLoadedRegister();
+        }
+        else if (_mode == Mode.AwaitingProgram)
+        {
+            CompleteProgramChange();
+        }
+        else
+        {
+            ExecuteEntered();
         }
     }
 
@@ -234,19 +385,57 @@ public sealed class DskyController
         }
         else
         {
-            // 입력 중이 아니면 지울 데이터가 없다. 데이터 입력 기능이 생기기 전까지는 무시한다.
+            // 입력 중이 아니면 지울 데이터가 없다.
         }
     }
 
+    /// <summary>PRO: 깜박이는 요청 표시에 응답한다. 응답할 대상이 없으면 아무 일도 하지 않는다.</summary>
+    private void Proceed()
+    {
+        if (_requestFlash)
+        {
+            _requestFlash = false;
+            _log.Info("PRO: flashing display acknowledged");
+        }
+        else
+        {
+            // 데이터 로드 대기 중의 PRO는 무시된다(실제로도 V33E를 써야 한다). 그 밖에는 응답할 요청이 없다.
+        }
+    }
+
+    /// <summary>KEY REL: 사용 중인 표시를 놓는다. 대기 중이던 프로그램 요청이 있으면 이어서 표시한다.</summary>
     private void ReleaseDisplay()
     {
+        AbortMode();
         _isMonitoring = false;
         _activeNoun = null;
+        _requestFlash = false;
         _registers = NewBlankRegisters();
         _verbText = string.Empty;
         _nounText = string.Empty;
         _entry = EntryField.None;
+        _keyRelLamp = false;
+        if (_pendingRequest is { } request)
+        {
+            _pendingRequest = null;
+            PresentRequest(request.Verb, request.Noun, request.Flash);
+        }
     }
+
+    /// <summary>진행 중인 데이터 로드/프로그램 번호 대기를 취소한다.</summary>
+    private void AbortMode()
+    {
+        var wasLoading = _load is not null;
+        _mode = Mode.Idle;
+        _load = null;
+        if (wasLoading)
+        {
+            // 로드 중에는 레지스터를 비워 두었으므로 원래 Noun 값을 다시 보여준다.
+            RefreshRegisters();
+        }
+    }
+
+    // ---- Verb 실행 ----
 
     private void ExecuteEntered()
     {
@@ -257,10 +446,39 @@ public sealed class DskyController
         }
 
         _entry = EntryField.None;
-        if (verb == VerbLampTest)
+        switch (verb)
         {
-            _lampTestRemaining = LampTestDuration;
-            _log.Info("V35 lamp test");
+            case VerbLampTest:
+                _lampTestRemaining = LampTestDuration;
+                _log.Info("V35 lamp test");
+                return;
+            case VerbProgramChange:
+                BeginProgramChange();
+                return;
+            case VerbProceed:
+                ProceedWithoutData();
+                return;
+            case VerbTerminate:
+                Terminate();
+                return;
+            default:
+                ExecuteNounVerb(verb);
+                return;
+        }
+    }
+
+    /// <summary>Noun이 필요한 Verb(표시 05/06/16, 로드 21~25)를 실행한다.</summary>
+    private void ExecuteNounVerb(int verb)
+    {
+        if (!TryParseField(_nounText, out var noun))
+        {
+            RaiseOperatorError($"V{verb:D2} needs a complete noun: '{_nounText}'");
+            return;
+        }
+
+        if (RegisterLoadSession.TryCreate(verb, noun, out var session))
+        {
+            StartLoad(verb, noun, session!);
             return;
         }
 
@@ -270,7 +488,7 @@ public sealed class DskyController
             return;
         }
 
-        if (!TryParseField(_nounText, out var noun) || !IsNounAllowed(verb, noun))
+        if (!IsNounAllowed(verb, noun))
         {
             RaiseOperatorError($"invalid noun for verb {verb:D2}: '{_nounText}'");
             return;
@@ -278,6 +496,7 @@ public sealed class DskyController
 
         _activeNoun = noun;
         _isMonitoring = verb == VerbMonitor;
+        _sinceMonitorRefresh = TimeSpan.Zero;
         RefreshRegisters();
         _log.Info($"V{verb:D2} N{noun:D2} executed");
     }
@@ -293,6 +512,173 @@ public sealed class DskyController
         return DskyNouns.IsTelemetryNoun(noun);
     }
 
+    /// <summary>V35가 끝난 뒤: 깜박임은 멈추고 88 표시는 남는다(Virtual AGC 문서 기준).</summary>
+    private void LeaveLampTestResidue()
+    {
+        AbortMode();
+        _isMonitoring = false;
+        _activeNoun = null;
+        _verbText = LampTestField;
+        _nounText = LampTestField;
+        _registers = [LampTestRegister, LampTestRegister, LampTestRegister];
+    }
+
+    private void PresentRequest(int verb, int noun, bool flash)
+    {
+        _verbText = verb.ToString("D2");
+        _nounText = noun.ToString("D2");
+        _activeNoun = noun;
+        _isMonitoring = verb == VerbMonitor;
+        _requestFlash = flash;
+        _sinceMonitorRefresh = TimeSpan.Zero;
+        RefreshRegisters();
+        _log.Info($"Program display V{verb:D2} N{noun:D2}{(flash ? " (flashing)" : string.Empty)}");
+    }
+
+    /// <summary>V33: 데이터 없이 진행. 로드 중이면 로드를 끝내고, 깜박임 요청이면 응답한다.</summary>
+    private void ProceedWithoutData()
+    {
+        if (_mode == Mode.LoadingData)
+        {
+            AbortMode();
+        }
+
+        Proceed();
+    }
+
+    /// <summary>V34: 진행 중인 입력/요청 표시를 종료한다.</summary>
+    private void Terminate()
+    {
+        AbortMode();
+        _requestFlash = false;
+        _log.Info("V34 terminate");
+    }
+
+    // ---- 데이터 로드 (V21~V25) ----
+
+    private void StartLoad(int verb, int noun, RegisterLoadSession session)
+    {
+        if (!DskyNouns.IsLoadable(noun))
+        {
+            RaiseOperatorError($"noun {noun:D2} cannot be loaded");
+            return;
+        }
+
+        if (noun == DskyNouns.ClockTime && verb != VerbLoadAllRegisters)
+        {
+            // 시/분/초 Noun은 3개 워드를 모두 로드해야 한다(원본: 그렇지 않으면 알람).
+            RaiseOperatorError("clock noun requires loading all 3 registers (V25)");
+            return;
+        }
+
+        _load = session;
+        _mode = Mode.LoadingData;
+        _activeNoun = noun;
+        _isMonitoring = false;
+        ShowLoadRegisters();
+        _log.Info($"V{verb:D2} N{noun:D2} load started");
+    }
+
+    private void ShowLoadRegisters()
+    {
+        if (_load is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < RegisterCount; i++)
+        {
+            if (_load.Covers(i))
+            {
+                _registers[i] = _load.TextFor(i);
+            }
+            else
+            {
+                // 로드 대상이 아닌 레지스터는 기존 표시를 유지한다.
+            }
+        }
+    }
+
+    private void AcceptLoadedRegister()
+    {
+        if (_load is null || !_load.Accept())
+        {
+            RaiseOperatorError("ENTR with incomplete load data (sign + 5 digits required)");
+            return;
+        }
+
+        ShowLoadRegisters();
+        if (_load.IsComplete)
+        {
+            ApplyLoad(_load);
+        }
+        else
+        {
+            // 다음 레지스터 입력을 계속 기다린다.
+        }
+    }
+
+    /// <summary>모든 레지스터가 입력되면 Noun에 맞게 적용한다(현재는 N36 시계).</summary>
+    private void ApplyLoad(RegisterLoadSession session)
+    {
+        var values = session.AcceptedValues;
+        var hours = int.Parse(values[0]!);
+        var minutes = int.Parse(values[1]!);
+        var centiseconds = int.Parse(values[2]!);
+        if (hours < 0 || minutes is < 0 or > MaxMinutes || centiseconds is < 0 or > MaxCentiseconds)
+        {
+            // 범위를 벗어난 시계 값: 오류를 알리고 처음부터 다시 입력받는다.
+            RaiseOperatorError($"invalid clock value {hours}:{minutes}:{centiseconds}");
+            session.Restart();
+            ShowLoadRegisters();
+            return;
+        }
+
+        var loaded = TimeSpan.FromHours(hours) + TimeSpan.FromMinutes(minutes)
+            + TimeSpan.FromMilliseconds(centiseconds * (1000.0 / CentisecondsPerSecond));
+        _clockOffset = loaded - _telemetry.Current.MissionElapsedTime;
+        _mode = Mode.Idle;
+        _load = null;
+        RefreshRegisters();
+        _log.Info($"AGC clock set to {loaded:hh\\:mm\\:ss\\.ff} (offset {_clockOffset:c})");
+    }
+
+    // ---- 프로그램 변경 (V37) ----
+
+    private void BeginProgramChange()
+    {
+        if (_programs is null)
+        {
+            RaiseOperatorError("V37 not supported (no program control)");
+            return;
+        }
+
+        // V37 뒤에는 NOUN 키 없이 2자리 프로그램 번호를 입력하고 ENTR 한다. 입력은 NOUN 창에 나타난다.
+        _mode = Mode.AwaitingProgram;
+        BeginEntry(EntryField.Noun);
+    }
+
+    private void CompleteProgramChange()
+    {
+        if (!TryParseField(_nounText, out var program))
+        {
+            RaiseOperatorError("V37 needs a 2-digit program number");
+            return;
+        }
+
+        _mode = Mode.Idle;
+        if (_programs is not null && _programs.TryRequestProgram(program))
+        {
+            _log.Info($"V37 P{program:D2} requested");
+        }
+        else
+        {
+            RaiseOperatorError($"program P{program:D2} rejected");
+        }
+    }
+
+    // ---- 레지스터 갱신 ----
+
     private void RefreshRegisters()
     {
         if (_activeNoun == DskyNouns.AlarmCodes)
@@ -303,7 +689,7 @@ public sealed class DskyController
                 _registers[i] = DskyNouns.FormatOctal(_alarmCodes[i]);
             }
         }
-        else if (_activeNoun is int noun && DskyNouns.TryFormat(noun, _telemetry.Current, out var formatted))
+        else if (_activeNoun is int noun && DskyNouns.TryFormat(noun, AdjustedTelemetry(), out var formatted))
         {
             _registers = formatted;
         }
@@ -311,6 +697,14 @@ public sealed class DskyController
         {
             // 표시할 Noun이 없으면 레지스터는 그대로(빈 상태) 둔다.
         }
+    }
+
+    /// <summary>AGC 시계 보정(V25 N36 로드)을 반영한 텔레메트리. 시계가 0보다 작아지지 않게 제한한다.</summary>
+    private AgcTelemetry AdjustedTelemetry()
+    {
+        var t = _telemetry.Current;
+        var clock = t.MissionElapsedTime + _clockOffset;
+        return t with { MissionElapsedTime = clock < TimeSpan.Zero ? TimeSpan.Zero : clock };
     }
 
     private void RaiseOperatorError(string reason)

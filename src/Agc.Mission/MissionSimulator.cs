@@ -9,11 +9,14 @@ namespace Agc.Mission;
 /// - Advance는 실시간 경과 시간 × 배속만큼 MET를 진행시키고, 그 사이 지난 알람/단계 전환 이벤트를 발생시킨다.
 /// - Seek은 임의 MET로 점프하며 알람은 발생시키지 않는다(건너뛴 알람은 재현하지 않음).
 /// </summary>
-public sealed class MissionSimulator : ITelemetrySource
+public sealed class MissionSimulator : ITelemetrySource, IProgramControl
 {
+    private const int IdleProgram = 0;
+
     private readonly MissionTimeline _timeline;
     private readonly ILog _log;
     private MissionSnapshot _snapshot;
+    private int? _requestedProgram;
 
     public MissionSimulator(MissionTimeline timeline, ILog log)
     {
@@ -32,7 +35,30 @@ public sealed class MissionSimulator : ITelemetrySource
 
     public MissionSnapshot Snapshot => _snapshot;
 
-    public AgcTelemetry Current => _snapshot.Telemetry;
+    /// <summary>현재 텔레메트리. V37로 요청한 프로그램이 있으면 그 번호가 반영된다(다음 단계 전환 때까지).</summary>
+    public AgcTelemetry Current => _requestedProgram is { } program
+        ? _snapshot.Telemetry with { ProgramNumber = program }
+        : _snapshot.Telemetry;
+
+    /// <summary>
+    /// V37 요청: 타임라인에 나오는 프로그램이거나 P00이면 받아들인다.
+    /// 요청한 프로그램은 미션이 다음 단계로 넘어가면 그 단계의 프로그램으로 대체된다.
+    /// </summary>
+    public bool TryRequestProgram(int program)
+    {
+        var known = program == IdleProgram || _timeline.Keyframes.Any(k => k.ProgramNumber == program);
+        if (known)
+        {
+            _requestedProgram = program;
+            _log.Info($"Program P{program:D2} requested by crew");
+        }
+        else
+        {
+            _log.Warn($"Program P{program:D2} request rejected (unknown program)");
+        }
+
+        return known;
+    }
 
     public TimeSpan Met => _snapshot.Met;
 
@@ -82,6 +108,7 @@ public sealed class MissionSimulator : ITelemetrySource
         _snapshot = _timeline.GetSnapshot(met);
         if (_snapshot.PhaseIndex != previousIndex)
         {
+            _requestedProgram = null;
             _log.Info($"Phase -> {_snapshot.Phase.PhaseName} (P{_snapshot.Phase.ProgramNumber:D2}) at MET {_snapshot.Met:hh\\:mm\\:ss}");
             PhaseChanged?.Invoke(_snapshot);
         }

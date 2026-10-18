@@ -67,9 +67,9 @@ public static class Apollo11Mission
             Frame(Met(102, 33, 5), "동력 하강 시작(PDI)", "하강 엔진을 점화하여 감속을 시작한다. AGC는 P63(제동 단계)을 수행한다.",
                 63, moon, 15 * Km, 1700, 0.7, 8.0),
             Frame(Met(102, 41, 32), "접근 단계(P64)", "착륙 지점이 창문에 보이기 시작한다. 목표 지점이 바위 지대로 확인된다.",
-                64, moon, 2100, 150, 0.68, 22.0),
-            Frame(Met(102, 43, 30), "수동 조종 착륙(P66)", "암스트롱이 수동으로 비행하며 안전한 착륙 지점을 찾는다.",
-                66, moon, 150, 20, TranquilityLatitude, 23.4),
+                64, moon, 2255, 90, 0.68, 22.0),
+            Frame(Met(102, 43, 20), "수동 조종 착륙(P66)", "암스트롱이 수동으로 비행하며 안전한 착륙 지점을 찾는다.",
+                66, moon, 131, 20, TranquilityLatitude, 23.4),
             Frame(Met(102, 45, 40), "착륙 — 고요의 바다", "\"Houston, Tranquility Base here. The Eagle has landed.\" AGC는 P68(착륙 확인)을 수행한다.",
                 68, moon, 0, 0, TranquilityLatitude, TranquilityLongitude),
             Frame(Met(109, 24, 15), "달 표면 활동(EVA)", "닐 암스트롱이 달 표면에 첫 발을 내딛는다.",
@@ -99,15 +99,19 @@ public static class Apollo11Mission
         ];
     }
 
-    /// <summary>하강 중 발생한 1201/1202 프로그램 알람(대략적인 시각).</summary>
+    /// <summary>
+    /// 하강 중 발생한 프로그램 알람(1202 4회, 1201 1회). 시각은 Flight Journal/Eyles 기록을 바탕으로 한 근사값이다:
+    /// 앞의 둘은 P63 제동 중(V16N68 표시 후), 1201은 102:42:17경, 이어서 +24초, +16초 뒤 1202.
+    /// </summary>
     private static List<MissionAlarm> BuildAlarms()
     {
         return
         [
             new MissionAlarm(Met(102, 38, 26), 1202),
-            new MissionAlarm(Met(102, 39, 2), 1201),
-            new MissionAlarm(Met(102, 39, 31), 1202),
-            new MissionAlarm(Met(102, 42, 19), 1202),
+            new MissionAlarm(Met(102, 39, 2), 1202),
+            new MissionAlarm(Met(102, 42, 17), 1201),
+            new MissionAlarm(Met(102, 42, 41), 1202),
+            new MissionAlarm(Met(102, 42, 57), 1202),
         ];
     }
 }

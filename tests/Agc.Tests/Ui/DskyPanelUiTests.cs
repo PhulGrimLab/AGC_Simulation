@@ -17,7 +17,7 @@ namespace Agc.Tests.Ui;
 public sealed class DskyPanelUiTests
 {
     private const int PanelWidth = 590;
-    private const int PanelHeight = 640;
+    private const int PanelHeight = 646;
     private const int LitGreenThreshold = 0xF0;
     private const int LitBlueMax = 0xC0;
     private const int KeypadRowUnits = 6;
@@ -170,6 +170,44 @@ public sealed class DskyPanelUiTests
         Assert.AreNotEqual(compUnlit, comp);
         Assert.IsGreaterThan(comp.R, comp.G, "COMP ACTY는 녹색 계열");
         Assert.AreEqual(unlit, BackgroundOf(LampBox(grid, "TEMP")), "켜지지 않은 램프는 그대로");
+    }
+
+    // ---- 깜박임 ----
+
+    [STATestMethod]
+    public void Flash_VerbAndNounBlinkOnlyWhenDisplayRequestsIt()
+    {
+        var panel = CreateArrangedPanel();
+        var verb = Find<SegmentDisplay>(panel, "VerbDisplay");
+        var noun = Find<SegmentDisplay>(panel, "NounDisplay");
+        var prog = Find<SegmentDisplay>(panel, "ProgDisplay");
+
+        panel.Display = new DskyDisplay("00", "25", "36", "      ", "      ", "      ", DskyLamps.None, VerbNounFlashing: true);
+        Assert.AreEqual(1.0, verb.Opacity, "시작 위상은 켜짐");
+
+        panel.AdvanceFlashPhase();
+        Assert.AreEqual(0.0, verb.Opacity);
+        Assert.AreEqual(0.0, noun.Opacity);
+        Assert.AreEqual(1.0, prog.Opacity, "PROG와 레지스터는 깜박이지 않는다");
+
+        panel.AdvanceFlashPhase();
+        Assert.AreEqual(1.0, verb.Opacity);
+    }
+
+    [STATestMethod]
+    public void Flash_StopsAndStaysVisibleWhenFlashingEnds()
+    {
+        var panel = CreateArrangedPanel();
+        var verb = Find<SegmentDisplay>(panel, "VerbDisplay");
+        panel.Display = new DskyDisplay("00", "25", "36", "      ", "      ", "      ", DskyLamps.None, VerbNounFlashing: true);
+        panel.AdvanceFlashPhase();
+        Assert.AreEqual(0.0, verb.Opacity);
+
+        panel.Display = Display("00", "16", "36");
+
+        Assert.AreEqual(1.0, verb.Opacity, "깜박임이 끝나면 꺼진 위상에서도 다시 켜진다");
+        panel.AdvanceFlashPhase();
+        Assert.AreEqual(1.0, verb.Opacity, "깜박이지 않는 표시는 위상이 바뀌어도 켜져 있다");
     }
 
     // ---- 실제 DSKY 배치 ----

@@ -13,7 +13,7 @@ public sealed class AgcMissionIntegrationTests
     public void Setup()
     {
         _sim = new MissionSimulator(Apollo11Mission.Create(), NullLog.Instance);
-        _dsky = new DskyController(_sim, NullLog.Instance);
+        _dsky = new DskyController(_sim, NullLog.Instance, _sim);
         _sim.AlarmRaised += alarm => _dsky.RaiseAlarm(alarm.Code);
     }
 
@@ -70,6 +70,31 @@ public sealed class AgcMissionIntegrationTests
         Assert.IsGreaterThan(2400, rangeTenthNm);
         Assert.IsLessThan(2700, rangeTenthNm);
         Assert.AreEqual("+08 27", _dsky.Display.R2);
+    }
+
+    [TestMethod]
+    public void V37E_ChangesProgWindow_UntilNextMissionPhase()
+    {
+        _sim.Seek(new TimeSpan(102, 33, 5));
+        Assert.AreEqual("63", _dsky.Display.Prog);
+
+        _dsky.Press("V37E00E");
+        Assert.AreEqual("00", _dsky.Display.Prog);
+        Assert.IsFalse(_dsky.Display.Lamps.HasFlag(DskyLamps.OprErr));
+
+        _sim.Seek(new TimeSpan(102, 41, 32));
+        Assert.AreEqual("64", _dsky.Display.Prog);
+    }
+
+    [TestMethod]
+    public void V37E_UnknownProgram_LightsOprErrAndKeepsProg()
+    {
+        _sim.Seek(new TimeSpan(102, 33, 5));
+
+        _dsky.Press("V37E99E");
+
+        Assert.IsTrue(_dsky.Display.Lamps.HasFlag(DskyLamps.OprErr));
+        Assert.AreEqual("63", _dsky.Display.Prog);
     }
 
     [TestMethod]

@@ -65,6 +65,15 @@ public sealed class SegmentDisplay : FrameworkElement
         SegA | SegB | SegC | SegD | SegF | SegG,
     ];
 
+    /// <summary>실제 DSKY 숫자는 오른쪽으로 기울어져 있다. 위쪽이 오른쪽으로 가도록 기울인다.</summary>
+    private const double SlantDegrees = 8.0;
+
+    public SegmentDisplay()
+    {
+        RenderTransform = new SkewTransform(-SlantDegrees, 0);
+        RenderTransformOrigin = new Point(0.5, 0.5);
+    }
+
     public string Text
     {
         get => (string)GetValue(TextProperty);

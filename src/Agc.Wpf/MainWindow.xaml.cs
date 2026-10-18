@@ -40,7 +40,7 @@ public partial class MainWindow : Window
         _log = CreateLog();
         var timeline = Apollo11Mission.Create();
         _sim = new MissionSimulator(timeline, _log);
-        _dsky = new DskyController(_sim, _log);
+        _dsky = new DskyController(_sim, _log, _sim);
         _sim.AlarmRaised += alarm => _dsky.RaiseAlarm(alarm.Code);
         _sim.SpeedMultiplier = ReadSpeedMultiplier();
 

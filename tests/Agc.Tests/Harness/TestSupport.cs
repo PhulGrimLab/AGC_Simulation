@@ -23,6 +23,22 @@ internal sealed class FakeTelemetry : ITelemetrySource
 }
 
 /// <summary>
+/// V37 요청을 기록하고 허용 여부를 테스트가 정하는 가짜 프로그램 제어.
+/// </summary>
+internal sealed class FakeProgramControl : IProgramControl
+{
+    public bool Accept { get; set; } = true;
+
+    public List<int> Requested { get; } = [];
+
+    public bool TryRequestProgram(int program)
+    {
+        Requested.Add(program);
+        return Accept;
+    }
+}
+
+/// <summary>
 /// 기록된 로그를 메모리에 모아 두는 가짜 로거. 로그 항목 검증에 사용한다.
 /// </summary>
 internal sealed class ListLog : ILog
