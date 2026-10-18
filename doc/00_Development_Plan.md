@@ -142,7 +142,9 @@ dotnet test tests/Agc.Tests --filter "FullyQualifiedName~Dsky"   # 일부만
 2. `src/Agc.Wpf/bin/Debug/net10.0-windows/Agc.Wpf.exe` 실행 → 창이 뜨고 5초 후에도 응답하는지 확인
 3. 창 닫기 → `logs/agc-*.log`에 시작/종료 로그가 있는지 확인
 
-### 5.3 테스트 케이스 목록 (M1+M2+코드리뷰 수정: 총 147개, 모두 통과)
+### 5.3 테스트 케이스 목록 (M1+M2+코드리뷰 수정+UI 확장: 총 218개, 모두 통과)
+
+> UI 테스트 88개(UI-K/D/S/C/R/P/W 시나리오)의 **기능별 시나리오·절차·기대결과**와 최신 실행 결과는 엑셀 [`Test_Scenarios.xlsx`](Test_Scenarios.xlsx)에 정리했다(5.6). 아래 표는 클래스 단위 요약이다.
 
 | 기능 | 테스트 클래스 (파일) | 개수 | 검증 내용 |
 |---|---|---|---|
@@ -156,6 +158,11 @@ dotnet test tests/Agc.Tests --filter "FullyQualifiedName~Dsky"   # 일부만
 | 시뮬레이터 | `MissionSimulatorTests` | 15 | 정지 시 무진행, 배속, 끝 도달 시 정지, Seek 클램프, Current 갱신, 알람 1회 발생/Seek는 미발생/여러 알람 순서(1202,1202,1201,1202,1202), 단계 전환 이벤트, 단계 로그, V37 요청(허용/거부/단계 전환 시 대체/같은 단계 유지) |
 | 미션↔DSKY 연동 | `AgcMissionIntegrationTests` | 7 | PROG 창이 단계 추종, N36=MET, N63 하강 추적(고도 감소·하강률 음수), N68 사거리/잔여시간, 하강 알람 → PROG 램프 + V05N09 + RSET, V37E00E로 PROG 변경 후 다음 단계에서 복귀, 미지원 프로그램 거부 |
 | 비동기 로거 | `AsyncFileLoggerTests` | 4 | Dispose 시 flush·레벨 표기, Dispose 이후 안전, 200줄 다중 스레드 무손실, NullLog |
+| 키보드 입력 UI | `KeyboardMappingTests` | 14 | PC 키 → DSKY 키 매핑표(상단/넘패드 숫자, +/−, V/N/Enter/C/Backspace/R/K/P, Shift·Ctrl·Alt 처리, 미매핑 키, 19키 도달성), 창에서 키보드로 V35E·로드 입력, **실제 KeyDown 이벤트 라우팅(Handled)**, 마우스·키보드 혼용 |
+| DSKY 조작 UI | `DskyOperationUiTests` | 18 | 마우스로 DSKY 조작한 종단 흐름: 초기 화면, V35E 전 과정(점등·깜박임·88 유지), V16 1초 갱신/V06 고정, OPR ERR/RSET, CLR, V37E00E, V25N36E 시계 로드, KEY REL, 미지원 명령 8종, V33/V34 응답, 범위 밖 시계 값, N43/N63/N68 값, 연속 명령 중 화면 형식 |
+| 미션 컨트롤 UI | `MissionControlUiTests` | 16 | 초기 상태, 재생/일시정지, 배속 5종, 재생 중 배속 변경, 슬라이더 이동·범위, **모든 단계로 이동(시각·단계명·PROG·설명)**, 미션 끝 자동 정지, 텔레메트리 텍스트, 기준 천체 전환, 착륙지점 표시, 슬라이더 추종, 단계 목록 추종, 알람 연동, 도식 천체 색 |
+| 복합 시나리오 UI | `CompositeScenarioUiTests` | 17 | **하강 전 과정(P63→P68, 알람 5회, 고도 단조 감소)**, 알람 읽기·해제·누적, V37 선택 후 단계 전환, 시계 로드+재생, 모니터 중 Seek, 재생 중 램프 테스트/로드, **3600× 전 미션 완주**, 모든 단계 N43 일치, 사거리·잔여시간 감소, 재생·일시정지 연속성, **무작위 키·시간·배속 스트레스 600회**, 알람 중간 재생, KEY REL, 로그 파일 기록, 이중 Dispose |
+| 실제 창 UI | `RealWindowTests` | 6 | **창을 실제로 Show()**: 실제 타이머가 시계 진행, 깜박임·모니터가 각자 타이머로 동작, 주요 시나리오 **스크린샷 4장과 픽셀 검증**, 창 크기별(1500×860/1100×700/1920×1080) 레이아웃, 닫으면 타이머 정지, **실제 `Agc.Wpf.exe` 프로세스 실행 → PrintWindow 캡처 → 정상 종료(코드 0)와 시작/종료 로그** |
 | 메인 창 UI | `MainWindowUiTests` | 3 | 미션 끝에서 ▶를 누르면 처음부터 재생, 슬라이더 이동 시 단계 목록이 현재 단계를 가리킴, 같은 단계를 다시 골라도 이동 |
 | DSKY UI | `DskyPanelUiTests` | 14 | V/N 깜박임 위상(깜박일 때만, 종료 시 복귀), 7-세그먼트 8>1·공백 무점등·`+`>`-`, 패널 Display 반영, 램프 색(흰/호박/녹), **램프 패널 2열×14칸 순서, 숫자 표시 5줄 순서, 키패드 19키 좌표(7열·반 칸 오프셋·중앙 정렬), 키가 정사각형**, 키→DskyKey 매핑, 버튼 포커스 미탈취, 렌더 픽셀 검증(값 유무에 따른 점등) |
 
@@ -171,6 +178,8 @@ dotnet test tests/Agc.Tests --filter "FullyQualifiedName~Dsky"   # 일부만
 | DSKY 외관이 실제와 다름(어두운 본체, 흰 라벨, 직립 숫자) | Virtual AGC 실물 사진/도해 대조 | 밝은 회색 베젤, 우윳빛 램프, 초록 라벨 박스, 기울어진 숫자 |
 | **코드리뷰 지적 10건**: ① 로드/V37 대기 중 `V33E`/`V34E`로 응답 불가(VERB 키가 대기를 취소) ② V34가 V16 모니터를 끄지 않음 ③ V35 중 입력이 숨은 상태를 남김(`887`) ④ 알람 핸들러가 갱신 전 MET를 봄 ⑤ 단계 콤보가 현재 단계와 동기화되지 않음 ⑥ 미션 끝에서 ▶가 동작하지 않음 ⑦ 경도 보간이 날짜 변경선을 무시 ⑧ 매직 넘버(CLAUDE.md 규칙 7) ⑨ 상수 중복 ⑩ 세그먼트 도형을 렌더마다 재생성 | 외부 코드리뷰 | 모두 재현 테스트 작성 후 수정. ①: VERB 키는 새 Verb 입력만 받고 ENTR 시 실행(V33/V34 이외는 대기를 대체) ②: V34가 모니터/표시 해제 ③: 램프 테스트 중 키 무시 ④: 이동 후 알림 ⑤⑥: MainWindow 수정 ⑦: 최단 경로 경도 보간 ⑧⑨⑩: 상수화·공용화·도형 캐시. CLR은 실제 DSKY처럼 데이터 입력에만 작동하므로 유지하고 주석으로 명시 |
 | **N62를 잘못 정의**(속도/고도변화율/고도로 구현, 원본은 속도/점화까지 시간/누적 ΔV) 및 십진 레지스터 부호 누락 | 원본 소스 대조 | N63/N68로 교체, 십진은 항상 부호·8진만 공백으로 수정 |
+| **최소 창 크기(1100×700)에서 "단계 이동" 콤보가 창 밖으로 잘림** | 실제 창 UI 테스트(UI-R04) | 고정 폭 StackPanel → 남는 폭을 채우는 Grid 열 |
+| UI 테스트 하네스·시나리오 결함(시간 누적 오차, 기대값 오류, 램프 테스트 중 키 무시를 고려하지 않은 시나리오, 창 바깥 크기 기준 착오) | UI 테스트 실행 | 하네스·테스트 수정(제품 결함 아님). 전체 목록은 `Test_Scenarios.xlsx`의 "발견된 결함" 시트 |
 
 ### 5.5 이후 마일스톤의 테스트 규칙
 
@@ -178,6 +187,29 @@ dotnet test tests/Agc.Tests --filter "FullyQualifiedName~Dsky"   # 일부만
 - 새 Verb/Noun → `DskyCommandTests`/`DskyNounFormatTests`에 케이스 추가, 새 단계/알람 → `Apollo11MissionDataTests`, UI 변경 → `DskyPanelUiTests` 렌더 검증 + 스모크 절차.
 - 5.3 표의 개수/내용을 함께 갱신한다.
 - 동작/표시 정의는 기억에 의존하지 않고 아래 공개 자료와 대조한 뒤 구현한다.
+- UI 기능을 바꾸면 `tools/test_scenario_catalog.py`에 시나리오를 추가하고(테스트에 `[TestCategory("UI-...")]` 부여), 엑셀을 다시 만든다(5.6).
+
+### 5.6 UI 테스트 하네스와 시나리오 엑셀
+
+**하네스(`tests/Agc.Tests/Harness/UiDriver.cs`)**: 메인 창을 사람이 쓰듯 조작하고 화면을 읽는다.
+- 마우스: `Click("VERB")`, `Press("V16N63E")`, 재생/배속/슬라이더/단계 이동
+- 시간: 창을 띄우지 않는 테스트는 `Step`/`Run`(0.2초 단위, 정수 틱)으로 시간을 직접 흘린다. 창을 띄운 테스트(`Show()`)는 `Pump`로 실제 타이머가 돌게 한다.
+- 읽기: PROG/VERB/NOUN/R1~R3 텍스트, 램프 점등, 깜박임, 미션 텍스트, `Capture()`(창 전체 비트맵)
+- 검증 보조: `AssertDisplayWellFormed()`(모든 화면이 지켜야 할 형식 규칙)
+- 제품 쪽 테스트 용이성: `MainWindow.Step`, `MainWindow.HandleKeyDown`, `DskyKeyboardMap`(키 매핑 분리), `InternalsVisibleTo`
+
+**시나리오 엑셀(`doc/Test_Scenarios.xlsx`)**: 시트 4개 — 요약(수식), UI 시나리오 88개(분류: 단일/복합/실제 창/매핑표, 사전조건·절차·기대결과·자동화 테스트·결과), 전체 테스트 결과 218행, 발견된 결함 17건.
+
+```powershell
+python tools/make_test_report.py              # 전체 테스트를 실행하고 엑셀을 다시 만든다
+python tools/make_test_report.py --trx x.trx  # 기존 TRX 결과로 만든다
+```
+
+스크린샷(실제 창 테스트가 `bin/.../screenshots/`에 저장): `doc/screenshots/` — 램프 테스트, 하강 중 알람, 착륙 후, 실행한 앱 전체 화면.
+
+![실행한 앱](screenshots/10_launched_app.png)
+
+![하강 중 알람](screenshots/03_descent_alarm.png)
 
 ## 6. 참고 자료 (공개 자료)
 

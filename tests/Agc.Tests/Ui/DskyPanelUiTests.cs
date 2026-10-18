@@ -100,6 +100,7 @@ public sealed class DskyPanelUiTests
     // ---- SegmentDisplay ----
 
     [STATestMethod]
+    [TestCategory("UI-P01")]
     public void SegmentDisplay_Digit8_LightsMoreThanDigit1()
     {
         var eight = MeasuredSegment("8", 1);
@@ -113,6 +114,7 @@ public sealed class DskyPanelUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-P02")]
     public void SegmentDisplay_BlankText_LightsNothing()
     {
         var blank = MeasuredSegment("   ", 3);
@@ -121,6 +123,7 @@ public sealed class DskyPanelUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-P03")]
     public void SegmentDisplay_PlusLightsMoreThanMinus()
     {
         var plus = MeasuredSegment("+", 1);
@@ -134,6 +137,7 @@ public sealed class DskyPanelUiTests
     // ---- 표시 내용 ----
 
     [STATestMethod]
+    [TestCategory("UI-P04")]
     public void Panel_Display_UpdatesAllSegmentWindows()
     {
         var panel = CreateArrangedPanel();
@@ -149,6 +153,7 @@ public sealed class DskyPanelUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-P05")]
     public void Panel_Lamps_LitColorsFollowRealDsky()
     {
         var panel = CreateArrangedPanel();
@@ -175,6 +180,7 @@ public sealed class DskyPanelUiTests
     // ---- 깜박임 ----
 
     [STATestMethod]
+    [TestCategory("UI-P06")]
     public void Flash_VerbAndNounBlinkOnlyWhenDisplayRequestsIt()
     {
         var panel = CreateArrangedPanel();
@@ -195,6 +201,7 @@ public sealed class DskyPanelUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-P07")]
     public void Flash_StopsAndStaysVisibleWhenFlashingEnds()
     {
         var panel = CreateArrangedPanel();
@@ -213,6 +220,7 @@ public sealed class DskyPanelUiTests
     // ---- 실제 DSKY 배치 ----
 
     [STATestMethod]
+    [TestCategory("UI-P08")]
     public void Layout_LampPanel_HasRealTwoByFourteenOrder()
     {
         var panel = CreateArrangedPanel();
@@ -233,6 +241,7 @@ public sealed class DskyPanelUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-P09")]
     public void Layout_DisplayPanel_HasFiveLinesInRealOrder()
     {
         var panel = CreateArrangedPanel();
@@ -253,6 +262,7 @@ public sealed class DskyPanelUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-P10")]
     public void Layout_Keypad_HasNineteenKeysInSevenColumnsWithHalfRowOffsets()
     {
         var panel = CreateArrangedPanel();
@@ -288,6 +298,7 @@ public sealed class DskyPanelUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-P11")]
     public void Layout_Keys_AreSquareWithinTheirCells()
     {
         var panel = CreateArrangedPanel();
@@ -302,6 +313,7 @@ public sealed class DskyPanelUiTests
     // ---- 키 동작 ----
 
     [STATestMethod]
+    [TestCategory("UI-P12")]
     public void Panel_Keypad_EveryButtonRaisesItsKey()
     {
         var panel = CreateArrangedPanel();
@@ -330,6 +342,7 @@ public sealed class DskyPanelUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-P13")]
     public void Panel_Keypad_ButtonsDoNotStealKeyboardFocus()
     {
         var panel = CreateArrangedPanel();
@@ -341,6 +354,7 @@ public sealed class DskyPanelUiTests
     // ---- 렌더링 ----
 
     [STATestMethod]
+    [TestCategory("UI-P14")]
     public void Panel_FullDisplay_LitSegmentsAppearOnlyWhereValuesAreShown()
     {
         var panel = CreateArrangedPanel();

@@ -26,6 +26,7 @@ public sealed class MainWindowUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-W01")]
     public void Play_AfterMissionEnd_RestartsFromTheBeginning()
     {
         var window = new MainWindow();
@@ -49,6 +50,7 @@ public sealed class MainWindowUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-W02")]
     public void PhaseBox_FollowsTheMissionPosition()
     {
         var window = new MainWindow();
@@ -69,6 +71,7 @@ public sealed class MainWindowUiTests
     }
 
     [STATestMethod]
+    [TestCategory("UI-W03")]
     public void PhaseBox_SelectingTheSamePhaseAgainStillJumps()
     {
         var window = new MainWindow();

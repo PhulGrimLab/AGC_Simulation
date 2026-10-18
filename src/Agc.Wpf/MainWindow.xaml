@@ -57,19 +57,28 @@
             <StackPanel Grid.Row="3" Margin="0,12,0,0">
                 <Slider x:Name="TimelineSlider" Minimum="0" IsMoveToPointEnabled="True"
                         ValueChanged="TimelineSlider_ValueChanged"/>
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button x:Name="PlayButton" Content="▶ 재생" Width="90" Height="30" Click="PlayButton_Click" Focusable="False"/>
-                    <TextBlock Text="배속" VerticalAlignment="Center" Margin="16,0,6,0"/>
-                    <ComboBox x:Name="SpeedBox" Width="90" SelectionChanged="SpeedBox_SelectionChanged" Focusable="False">
+                <!-- 마지막 열(단계 이동)이 남는 폭을 채워, 좁은 창에서도 잘리지 않는다 -->
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*" MinWidth="120"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="PlayButton" Grid.Column="0" Content="▶ 재생" Width="90" Height="30" Click="PlayButton_Click" Focusable="False"/>
+                    <TextBlock Grid.Column="1" Text="배속" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                    <ComboBox x:Name="SpeedBox" Grid.Column="2" Width="90" SelectionChanged="SpeedBox_SelectionChanged" Focusable="False">
                         <ComboBoxItem Content="1×" Tag="1"/>
                         <ComboBoxItem Content="10×" Tag="10"/>
                         <ComboBoxItem Content="60×" Tag="60" IsSelected="True"/>
                         <ComboBoxItem Content="600×" Tag="600"/>
                         <ComboBoxItem Content="3600×" Tag="3600"/>
                     </ComboBox>
-                    <TextBlock Text="단계 이동" VerticalAlignment="Center" Margin="16,0,6,0"/>
-                    <ComboBox x:Name="PhaseBox" Width="260" SelectionChanged="PhaseBox_SelectionChanged" Focusable="False"/>
-                </StackPanel>
+                    <TextBlock Grid.Column="3" Text="단계 이동" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                    <ComboBox x:Name="PhaseBox" Grid.Column="4" MaxWidth="320" HorizontalAlignment="Stretch"
+                              SelectionChanged="PhaseBox_SelectionChanged" Focusable="False"/>
+                </Grid>
             </StackPanel>
         </Grid>
     </Grid>

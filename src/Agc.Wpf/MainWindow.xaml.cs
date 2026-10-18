@@ -85,6 +85,15 @@ public partial class MainWindow : Window
         var elapsed = now - _lastTick;
         _lastTick = now;
 
+        Step(elapsed);
+    }
+
+    /// <summary>
+    /// 실제 경과 시간만큼 미션과 DSKY를 한 단계 진행하고 화면을 갱신한다.
+    /// 타이머가 주기적으로 호출하며, 테스트에서는 시간을 직접 흘려 보내는 데 쓴다.
+    /// </summary>
+    internal void Step(TimeSpan elapsed)
+    {
         _sim.Advance(elapsed);
         _dsky.Update(elapsed);
         RefreshView();
@@ -204,11 +213,8 @@ public partial class MainWindow : Window
     /// <summary>PC 키보드를 DSKY 키로 매핑한다. 숫자, +/-, V/N, Enter, C/Backspace, R, K, P.</summary>
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        var key = MapKey(e);
-        if (key is { } dskyKey)
+        if (HandleKeyDown(e.Key, Keyboard.Modifiers))
         {
-            _dsky.PressKey(dskyKey);
-            RefreshView();
             e.Handled = true;
         }
         else
@@ -217,24 +223,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private static DskyKey? MapKey(KeyEventArgs e)
+    /// <summary>
+    /// PC 키 입력을 DSKY 키로 변환해 눌러 준다. DSKY 키로 처리했으면 true(이벤트를 처리됨으로 표시해야 함).
+    /// 테스트에서 키 이벤트 없이 직접 호출할 수 있도록 분리했다.
+    /// </summary>
+    internal bool HandleKeyDown(Key key, ModifierKeys modifiers)
     {
-        var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-        return e.Key switch
+        if (DskyKeyboardMap.TryMap(key, modifiers) is not { } dskyKey)
         {
-            >= Key.D0 and <= Key.D9 when !shift => DskyKey.Digit0 + (e.Key - Key.D0),
-            >= Key.NumPad0 and <= Key.NumPad9 => DskyKey.Digit0 + (e.Key - Key.NumPad0),
-            Key.Add => DskyKey.Plus,
-            Key.OemPlus when shift => DskyKey.Plus,
-            Key.Subtract or Key.OemMinus => DskyKey.Minus,
-            Key.V => DskyKey.Verb,
-            Key.N => DskyKey.Noun,
-            Key.Enter => DskyKey.Enter,
-            Key.C or Key.Back => DskyKey.Clear,
-            Key.R => DskyKey.Reset,
-            Key.K => DskyKey.KeyRelease,
-            Key.P => DskyKey.Proceed,
-            _ => null,
-        };
+            return false;
+        }
+
+        _dsky.PressKey(dskyKey);
+        RefreshView();
+        return true;
     }
 }
