@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Agc.Core/Agc.Core.csproj" />
+    <Project Path="src/Agc.Mission/Agc.Mission.csproj" />
+    <Project Path="src/Agc.Wpf/Agc.Wpf.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Agc.Tests/Agc.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,105 @@
+namespace Agc.Tests.Mission;
+
+/// <summary>기능: Apollo 11 타임라인 데이터의 무결성과 주요 이벤트 시각.</summary>
+[TestClass]
+public sealed class Apollo11MissionDataTests
+{
+    private static readonly MissionTimeline Timeline = Apollo11Mission.Create();
+
+    [TestMethod]
+    public void Create_Succeeds_AndStartsWithLaunchProgram11()
+    {
+        var first = Timeline.Keyframes[0];
+
+        Assert.AreEqual(TimeSpan.Zero, first.Met);
+        Assert.AreEqual(11, first.ProgramNumber);
+        Assert.AreEqual(0, first.AltitudeMeters);
+    }
+
+    [TestMethod]
+    public void EndsAtSplashdown_195h18m35s_OnEarthAtZeroAltitude()
+    {
+        var last = Timeline.Keyframes[^1];
+
+        Assert.AreEqual(new TimeSpan(195, 18, 35), last.Met);
+        Assert.AreEqual(CelestialBody.Earth, last.Body);
+        Assert.AreEqual(0, last.AltitudeMeters);
+        Assert.AreEqual(0, last.SpeedMetersPerSecond);
+    }
+
+    [TestMethod]
+    public void AllKeyframes_HaveNonNegativeAltitudeAndSpeed_AndDescriptions()
+    {
+        foreach (var k in Timeline.Keyframes)
+        {
+            Assert.IsGreaterThanOrEqualTo(0.0, k.AltitudeMeters, k.PhaseName);
+            Assert.IsGreaterThanOrEqualTo(0.0, k.SpeedMetersPerSecond, k.PhaseName);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(k.PhaseName));
+            Assert.IsFalse(string.IsNullOrWhiteSpace(k.Description), k.PhaseName);
+        }
+    }
+
+    [TestMethod]
+    public void PoweredDescentInitiation_StartsProgram63()
+    {
+        var snapshot = Timeline.GetSnapshot(new TimeSpan(102, 33, 5));
+
+        Assert.AreEqual(63, snapshot.Telemetry.ProgramNumber);
+        Assert.AreEqual(CelestialBody.Moon, snapshot.Body);
+    }
+
+    [TestMethod]
+    public void Descent_AltitudeDecreasesMonotonicallyBetweenPdiAndTouchdown()
+    {
+        var previous = double.MaxValue;
+        for (var s = 0; s <= 12 * 60 + 35; s += 15)
+        {
+            var altitude = Timeline.GetSnapshot(new TimeSpan(102, 33, 5) + TimeSpan.FromSeconds(s)).Telemetry.AltitudeMeters;
+
+            Assert.IsLessThanOrEqualTo(previous, altitude, $"offset {s}s");
+            previous = altitude;
+        }
+    }
+
+    [TestMethod]
+    public void Touchdown_At102h45m40s_IsProgram68WithZeroAltitudeAndSpeed()
+    {
+        var snapshot = Timeline.GetSnapshot(new TimeSpan(102, 45, 40));
+
+        Assert.AreEqual(68, snapshot.Telemetry.ProgramNumber);
+        Assert.AreEqual(0, snapshot.Telemetry.AltitudeMeters, 1e-9);
+        Assert.AreEqual(0, snapshot.Telemetry.SpeedMetersPerSecond, 1e-9);
+    }
+
+    [TestMethod]
+    public void RangeToLandingSite_AtPdiIsAboutTwoHundredFiftyNauticalMiles_AndZeroAtTouchdown()
+    {
+        var pdiNm = Timeline.GetSnapshot(new TimeSpan(102, 33, 5)).Telemetry.RangeToTargetMeters / 1852.0;
+        var touchdown = Timeline.GetSnapshot(new TimeSpan(102, 45, 40)).Telemetry.RangeToTargetMeters;
+
+        Assert.IsGreaterThan(240.0, pdiNm);
+        Assert.IsLessThan(270.0, pdiNm);
+        Assert.AreEqual(0, touchdown, 1.0);
+    }
+
+    [TestMethod]
+    public void BrakingPhaseTimeToGo_AtPdiIsEightMinutes27Seconds()
+    {
+        var t = Timeline.GetSnapshot(new TimeSpan(102, 33, 5)).Telemetry;
+
+        Assert.AreEqual(new TimeSpan(0, 8, 27), t.TimeToNextPhase);
+    }
+
+    [TestMethod]
+    public void DescentAlarms_FallDuringDescentPrograms()
+    {
+        Assert.HasCount(4, Timeline.Alarms);
+        foreach (var alarm in Timeline.Alarms)
+        {
+            var program = Timeline.GetSnapshot(alarm.Met).Telemetry.ProgramNumber;
+
+            Assert.IsTrue(program is 63 or 64 or 66, $"alarm {alarm.Code} in P{program}");
+            Assert.IsTrue(alarm.Code is 1201 or 1202);
+        }
+    }
+}

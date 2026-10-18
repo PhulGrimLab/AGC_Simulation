@@ -1,0 +1,203 @@
+# AGC Simulation 개발 계획
+
+Apollo Guidance Computer(AGC)의 DSKY를 시뮬레이션하고, 오른쪽 화면에서 Apollo 11의 발사→달 착륙→귀환 과정을 AGC와 연동해 보여주는 WPF 프로그램.
+
+- 기술 스택: C# / .NET SDK 10 (`net10.0`, WPF는 `net10.0-windows`), MSTest 4
+- 방식 결정: **B(시나리오 기반 시뮬레이션) + Apollo 11 단일 미션**으로 시작. 이후 A(실제 AGC ROM 에뮬레이션)로 확장할 수 있도록 CPU/미션 계층을 인터페이스(`ITelemetrySource`)로 분리한다.
+- 개발 규칙: `CLAUDE.md`(주석, 중괄호, `_` 접두사, 매직 넘버 금지, 최소 로그 등) + **기능마다 자동 테스트를 함께 개발하고 실행해 통과를 확인한다.**
+
+## 1. 화면 구성
+
+| 영역 | 내용 |
+|---|---|
+| 왼쪽 절반 | DSKY(실제 Block II 배치): 램프 패널 2열×7행, 숫자 표시 5줄(COMP ACTY+PROG / VERB+NOUN / R1 / R2 / R3), 7열×3행 키패드 19키 (PC 키보드 매핑 지원) |
+| 오른쪽 절반 | 미션 뷰: 단계명/설명, 벡터 도식(천체+우주선 마커), MET·고도·속도·수직속도·위치, 재생/일시정지, 배속, 타임라인 슬라이더, 단계 이동 |
+
+키보드 매핑: 숫자(상단/넘패드), `+` `-`, `V`=VERB, `N`=NOUN, `Enter`=ENTR, `C`/`Backspace`=CLR, `R`=RSET, `K`=KEY REL, `P`=PRO.
+
+### DSKY 실제 배치 (공개 자료 기준)
+
+```
+램프 패널 (2열 x 7행)            숫자 표시 (5줄, 녹색 전계발광 7-세그먼트)
+ UPLINK ACTY | TEMP               [COMP ACTY]               PROG  [88]
+ NO ATT      | GIMBAL LOCK        VERB [88]                 NOUN  [88]
+ STBY        | PROG               ────────────────────────────────
+ KEY REL     | RESTART            R1  [+/- 88888]
+ OPR ERR     | TRACKER            ────────────────────────────────
+   -         | ALT                R2  [+/- 88888]
+   -         | VEL                ────────────────────────────────
+                                  R3  [+/- 88888]
+
+키패드 (7열 x 3행 = 격자 21칸 중 19키, 한 행을 2단위로 보았을 때)
+              + 7 8 9 CLR
+   VERB                       ENTR        <- VERB/NOUN, ENTR/RSET은 반 칸(1단위) 아래에서 시작해
+              - 4 5 6 PRO                    3행 전체의 가운데에 걸친다
+   NOUN                       RSET
+              0 1 2 3 KEY REL
+```
+
+- 램프 색: 왼쪽 열(UPLINK ACTY, NO ATT, STBY, KEY REL, OPR ERR)은 흰색, 오른쪽 열(TEMP~VEL)은 호박색, COMP ACTY는 녹색. **색상은 사진 자료 기억에 근거한 가정이며 자료 대조가 필요하다.**
+- 십진 표시 레지스터는 항상 `+`/`-` 부호가 붙고, 부호 칸이 공백이면 8진 표시(알람 코드 N09)이다.
+- 키 격자의 세부(CLR/PRO/KEY REL이 6열, ENTR/RSET이 7열)는 "7열 3행 매트릭스, 19키, VERB/NOUN·ENTR/RSET이 반 칸 아래" 라는 공개 설명과 키 개수(2+3+9+3+2=19)로 맞춘 배치이다. 실제 사진과 최종 대조 필요.
+
+## 2. 아키텍처
+
+```
+Agc.Core     (net10.0)          DSKY 로직, 텔레메트리 인터페이스, 로거
+Agc.Mission  (net10.0)          Apollo 11 타임라인 데이터, 보간, 시뮬레이터(시계/배속/Seek/이벤트)
+Agc.Wpf      (net10.0-windows)  UI: SegmentDisplay, DskyPanel, MissionIllustration, MainWindow
+Agc.Tests    (net10.0-windows)  MSTest: 단위/연동/UI 렌더링 테스트
+```
+
+의존 방향: `Wpf → Mission → Core`, `Tests → 전부`.
+
+연동 흐름:
+1. `MissionSimulator`(= `ITelemetrySource`)가 MET를 진행시키고 현재 텔레메트리를 제공한다.
+2. `DskyController`는 텔레메트리를 읽어 PROG 창을 채우고, V16 모니터 Noun 값을 갱신한다.
+3. 시뮬레이터의 `AlarmRaised` 이벤트(1201/1202 등)를 `DskyController.RaiseAlarm`으로 전달해 PROG 램프를 켠다.
+4. UI는 `DispatcherTimer`(50ms)로 `Advance → Update → RefreshView`를 반복한다.
+
+### 지원하는 DSKY 명령
+
+| Verb | 의미 | Noun |
+|---|---|---|
+| V35 | 램프 테스트(5초) | - |
+| V06 | Noun 1회 표시 | 36 / 43 / 63 / 68 |
+| V16 | Noun 연속 모니터 | 36 / 43 / 63 / 68 |
+| V05 | 알람 코드 표시 | 09 |
+
+Noun 정의는 **Luminary 099 소스(`PINBALL_NOUN_TABLES.agc`)** 를 따른다 (아래 "참고 자료" 참조).
+
+| Noun | 원본 정의 | R1 | R2 | R3 |
+|---|---|---|---|---|
+| 09 | ALARM CODES (3COMP OCTAL ONLY) | 최근 알람(8진) | 이전 알람 | 그 이전 알람 |
+| 36 | TIME OF AGC CLOCK (HMS) | 시 | 분 | 초×100 |
+| 43 | LATITUDE / LONGITUDE / ALTITUDE | 위도 XXX.XX° | 경도 XXX.XX° | 고도 XXXX.X nm |
+| 63 | ABS VALUE OF VELOCITY / ALTITUDE RATE / COMPUTED ALTITUDE | 속도 XXXX.X ft/s | 고도변화율 XXXX.X ft/s | 계산 고도 XXXXX. ft |
+| 68 | SLANT RANGE TO LANDING SITE / TIME TO GO IN BRAKING PHASE / LR ALT − COMPUTED ALT | 사거리 XXXX.X nm | 제동 잔여시간 XXbXX(분 초) | 고도차 XXXXX. ft (모델링 안 함 → 0) |
+
+- N68의 사거리는 현재 위치에서 착륙 지점(0.67°N, 23.47°E)까지의 대원 거리와 고도를 합성한 근사값, 제동 잔여시간은 다음 미션 단계까지의 시간이다.
+- N62(속도 / 점화까지 시간 / 누적 ΔV), N60, N64 등은 아직 지원하지 않는다(M4).
+
+### 로그 (최소 항목)
+
+비동기 큐 + 전용 Writer(`AsyncFileLogger`), 실행 파일 옆 `logs/agc-yyyyMMdd.log`. UI 스레드는 파일 I/O를 기다리지 않는다.
+
+| 시점 | 수준 |
+|---|---|
+| 앱 시작/종료 | INFO |
+| 미션 단계 전환 (단계명, 프로그램 번호, MET) | INFO |
+| DSKY 명령 실행 (V/N), V35 램프 테스트 | INFO |
+| 프로그램 알람 발생 | WARN |
+| OPR ERR (사유 포함) | WARN |
+
+## 3. 마일스톤
+
+| 단계 | 내용 | 상태 |
+|---|---|---|
+| M1 | 솔루션 뼈대, DSKY 로직(V35/V06/V16/V05, N09/36/43/63/68), Apollo 11 타임라인+시뮬레이터, 알람 연동, **실제 배치 DSKY UI**, 미션 뷰(벡터 도식), 비동기 로거, 테스트 하네스 | **완료** |
+| M2 | 실제 동작 규칙 반영: **V/N 깜박임(요청 대기 표시)**, PRO 응답 규칙(로드 verb 중에는 `V PRO`), KEY REL 램프(AGC가 표시 장치를 요구할 때), **V37 프로그램 변경**, 데이터 입력(Load verb V21~V25, 부호 키), RESTART 램프 | 예정 |
+| M3 | 실제 NASA 이미지/영상 자산 도입(저작권/출처 목록 관리), 단계별 이미지, 도식 → 사진 전환 | 예정 |
+| M4 | 단계별 AGC 프로그램 시나리오 확장: 프로그램이 스스로 표시를 띄우는 동작(P63 시작 시 V06N63 등), P63→P64→P66→P68 하강 Noun(N60/N64), N62, 1201/1202 시 깜박임·RESTART 램프, 랑데부(P20/P34/P35), 재진입(P61~P67) | 예정 |
+| M5 | 타임라인 데이터 정확도 보정(Apollo 11 Flight Journal 대조), 다른 미션(Apollo 13 등) 확장 | 예정 |
+| M6 | (선택) 실제 AGC ROM(Comanche/Luminary) 에뮬레이션 — CPU 계층 교체 | 예정 |
+
+## 4. 알려진 한계 / 가정
+
+- 타임라인 수치는 공개 기록을 바탕으로 한 **반올림 근사값**이며 실제 텔레메트리가 아니다 (코드 주석에도 명시). M5에서 보정한다.
+- 같은 천체 기준 키프레임 사이는 선형 보간, 천체가 바뀌는 구간은 앞 값을 유지한다. 궤도 역학은 풀지 않는다.
+- 이 단계에서는 NASA 이미지 없이 벡터 도식을 사용한다.
+- 알람 시각은 대략적인 값이다(1202@102:38:26, 1201@102:39:02, 1202@102:39:31, 1202@102:42:19).
+
+## 5. 테스트 전략
+
+### 하네스 구성 (`tests/Agc.Tests`)
+
+| 구성 요소 | 위치 | 역할 |
+|---|---|---|
+| `FakeTelemetry` | `Harness/TestSupport.cs` | 값을 직접 바꿀 수 있는 텔레메트리 공급자 (DSKY를 미션과 분리해 테스트) |
+| `ListLog` | 〃 | 로그를 메모리에 모아 로그 항목 검증 |
+| `DskyDriver.Press("V16N63E")` | 〃 | 키 입력을 문자열로 재생 (`V N E C R K P + -` 및 숫자) |
+| `[STATestMethod]` + `[DoNotParallelize]` | `Ui/` | WPF 컨트롤을 STA 스레드에서 생성/렌더링하고 `RenderTargetBitmap` 픽셀로 검증. XAML 로드 경합을 피하려 UI 테스트는 직렬 실행 |
+| `InternalsVisibleTo("Agc.Tests")` | `Agc.Core.csproj` | 내부 변환 유틸(`DskyNouns`)을 직접 테스트 |
+
+계층별 검증 방법:
+
+1. **순수 로직(Core/Mission)**: 일반 단위 테스트. 경계값(99999 클램프, 구간 보간, 미션 끝 정지) 포함.
+2. **연동**: 실제 `MissionSimulator` + `DskyController`를 이벤트로 연결해 PROG 창/모니터/알람 전달 검증.
+3. **UI 렌더링**: OS 화면 캡처 대신 `RenderTargetBitmap`으로 컨트롤을 직접 렌더링해 픽셀로 확인 (OS 화면 캡처 신뢰 불가 이슈 회피). 육안 확인용 PNG를 임시 폴더(`%TEMP%\agc_dsky_panel.png`)에 저장.
+4. **스모크**: 실제 `Agc.Wpf.exe`를 실행해 창 제목/응답/로그 기록/정상 종료 확인 (수동 절차 5.2).
+
+### 5.1 실행 방법
+
+```powershell
+dotnet test tests/Agc.Tests          # 전체 테스트
+dotnet test tests/Agc.Tests --filter "FullyQualifiedName~Dsky"   # 일부만
+```
+
+### 5.2 스모크 절차
+
+1. `dotnet build AgcSimulation.slnx`
+2. `src/Agc.Wpf/bin/Debug/net10.0-windows/Agc.Wpf.exe` 실행 → 창이 뜨고 5초 후에도 응답하는지 확인
+3. 창 닫기 → `logs/agc-*.log`에 시작/종료 로그가 있는지 확인
+
+### 5.3 테스트 케이스 목록 (M1: 총 92개, 모두 통과)
+
+| 기능 | 테스트 클래스 (파일) | 개수 | 검증 내용 |
+|---|---|---|---|
+| Noun 표시 형식 | `DskyNounFormatTests` | 11 | 십진 항상 부호/5자리, 99999 클램프, 반올림, 8진 부호 공백, MIN/SEC(XXbXX), N36 시·분·초×100, N43 단위, N63 0.1 ft/s·ft 변환, N68, 미지원 Noun(N62 포함), 지원 Noun 판별 |
+| 키 입력 상태기계 | `DskyEntryTests` | 12 | 초기 화면, PROG가 텔레메트리 추종, V/N 자리 입력, 재입력 시 지움, CLR, VERB 없는 숫자/3번째 숫자/미완성 ENTR/부호 키 → OPR ERR, RSET, PRO |
+| DSKY 명령 실행 | `DskyCommandTests` | 16 | V35(전체 점등/5초 후 해제), V16 연속 갱신·COMP ACTY, V06 고정, N63·N68 값, 미지원 N62/N99/V99/V05N36/명령 누락 → OPR ERR, 실행 로그, KEY REL, 알람 램프/RSET, V05N09 최신순·최대 3개·즉시 갱신 |
+| 미션 타임라인 | `MissionTimelineTests` | 13 | 빈/비증가 키프레임 예외, Duration, MET 클램프, 선형 보간, 천체 변경 구간 유지, 마지막 키프레임, 단계별 프로그램, 알람 정렬, 다음 단계까지 시간, 목표 없음/다른 천체/대원 거리 사거리 |
+| Apollo 11 데이터 | `Apollo11MissionDataTests` | 9 | 시작 P11, 끝 195:18:35 착수, 값/설명 유효성, PDI=P63, 하강 고도 단조 감소, 착륙 102:45:40=P68·0m·0m/s, PDI 사거리 240~270 nm·착륙 시 0, PDI 제동 잔여 8분 27초, 알람이 하강 프로그램 중 발생 |
+| 시뮬레이터 | `MissionSimulatorTests` | 10 | 정지 시 무진행, 배속, 끝 도달 시 정지, Seek 클램프, Current 갱신, 알람 1회 발생/Seek는 미발생/여러 알람 순서, 단계 전환 이벤트, 단계 로그 |
+| 미션↔DSKY 연동 | `AgcMissionIntegrationTests` | 5 | PROG 창이 단계 추종, N36=MET, N63 하강 추적(고도 감소·하강률 음수), N68 사거리/잔여시간, 하강 알람 → PROG 램프 + V05N09 + RSET |
+| 비동기 로거 | `AsyncFileLoggerTests` | 4 | Dispose 시 flush·레벨 표기, Dispose 이후 안전, 200줄 다중 스레드 무손실, NullLog |
+| DSKY UI | `DskyPanelUiTests` | 12 | 7-세그먼트 8>1·공백 무점등·`+`>`-`, 패널 Display 반영, 램프 색(흰/호박/녹), **램프 패널 2열×14칸 순서, 숫자 표시 5줄 순서, 키패드 19키 좌표(7열·반 칸 오프셋·중앙 정렬), 키가 정사각형**, 키→DskyKey 매핑, 버튼 포커스 미탈취, 렌더 픽셀 검증(값 유무에 따른 점등) |
+
+### 5.4 개발 중 테스트로 발견·수정한 결함
+
+| 결함 | 발견 경로 | 조치 |
+|---|---|---|
+| 정적 `SolidColorBrush`가 동결되지 않아 다른 스레드에서 컨트롤 생성 시 예외 | UI 테스트(STA 다중 스레드) | 공유 브러시를 `Freeze()` |
+| 꺼진 `+` 세로 획이 모든 칸에 흐리게 그려짐 | 렌더 PNG 육안 확인 | 점등 시에만 그림 |
+| UI 테스트 간헐 실패(`XamlParseException`) — MSTest 메서드 병렬 실행 중 XAML 동시 로드 경합 | 반복 실행(5회 중 1회 실패) | UI 테스트 클래스 `[DoNotParallelize]`, 이후 반복 실행 통과 확인 |
+| 키가 정사각형이 아님(70×59) | 레이아웃 테스트 | 패널 높이 610→640 |
+| **N62를 잘못 정의**(속도/고도변화율/고도로 구현, 원본은 속도/점화까지 시간/누적 ΔV) 및 십진 레지스터 부호 누락 | 원본 소스 대조 | N63/N68로 교체, 십진은 항상 부호·8진만 공백으로 수정 |
+
+### 5.5 이후 마일스톤의 테스트 규칙
+
+- 새 기능은 해당 기능의 테스트(정상/경계/오류)를 **같은 변경에 포함**하고 `dotnet test` 전체 통과를 확인한 뒤 완료로 처리한다.
+- 새 Verb/Noun → `DskyCommandTests`/`DskyNounFormatTests`에 케이스 추가, 새 단계/알람 → `Apollo11MissionDataTests`, UI 변경 → `DskyPanelUiTests` 렌더 검증 + 스모크 절차.
+- 5.3 표의 개수/내용을 함께 갱신한다.
+- 동작/표시 정의는 기억에 의존하지 않고 아래 공개 자료와 대조한 뒤 구현한다.
+
+## 6. 참고 자료 (공개 자료)
+
+| 용도 | 자료 |
+|---|---|
+| Noun/Verb 정의, 단위, 스케일 | Luminary 099 소스 `Luminary099/PINBALL_NOUN_TABLES.agc` — [chrislgarry/Apollo-11](https://github.com/chrislgarry/Apollo-11) (Virtual AGC 원본 소스 재게시) |
+| DSKY 표시 구성(5줄), 램프 목록, 키 목록 | [NASSP: Display and Keyboard Assembly](https://nassp.space/index.php/DSKY) |
+| 키패드 7열×3행 매트릭스 / VERB·NOUN·ENTR·RSET의 반 칸 오프셋 | [BleuLlama/USB_DSKY](https://github.com/BleuLlama/USB_DSKY) (3행 7열 스위치 매트릭스), [gkoch02/Idle-Hours PR #425](https://github.com/gkoch02/Idle-Hours/pull/425) ("VERB/NOUN and ENTR/RSET sit half a row lower ... as on the real DSKY") |
+| 깜박임/PRO/KEY REL/PROG 램프 동작(M2 대상) | Apollo 15 Delco 소프트웨어 매뉴얼, LM-4.4 (LMA790-3) — [ibiblio.org/apollo](https://www.ibiblio.org/apollo/Documents/LMA790-3-LM-4.4.pdf), [Computers in Spaceflight Ch.2](https://www.nasa.gov/wp-content/uploads/static/history/computers/Ch2-7.html), [NASSP Simple AGC](https://nassp.space/index.php/C_AGC) |
+| 미션 타임라인 보정(M5) | Apollo 11 Flight Journal, Apollo 11 Mission Report |
+| **Virtual AGC 프로젝트 (종합)** | [ibiblio.org/apollo](https://www.ibiblio.org/apollo/) — [yaDSKY](https://www.ibiblio.org/apollo/yaDSKY.html)(DSKY 키/램프/표시 동작 설명, 도면·사진 목록), [Colossus 소스](https://www.ibiblio.org/apollo/Colossus.html), [Luminary 소스](https://www.ibiblio.org/apollo/Luminary.html), Verb/Noun 표 `yaAGC/Colossus249/ASSEMBLY_AND_OPERATION_INFORMATION.s`, 문서 라이브러리 [links2.html](https://www.ibiblio.org/apollo/links2.html), 엔지니어링 도면 `2003994-091.html`(Apollo 11-17 LM DSKY), `2003994-121.html`(CM DSKY), 색상 규격 `Documents/MIL_C_25050A.pdf` |
+
+### 6.1 Virtual AGC에서 확인한 사실과 구현 반영 계획
+
+| 확인한 내용 (출처: yaDSKY, index.html) | 현재 구현 | 계획 |
+|---|---|---|
+| 램프 14칸 구성. **CM(Apollo 8~)에는 ALT/VEL이 없고 LM(Apollo 11~14)에 ALT/VEL이 있다** | 한 가지 DSKY만 표시(ALT/VEL 포함) | M4: 미션 단계에 따라 CM DSKY(ALT/VEL 없음)와 LM DSKY(있음) 전환 — 하강/상승 단계는 LM, 나머지는 CM |
+| 점등 색은 항공용 노랑/흰색(MIL-C-25050). 해당 램프의 노랑/흰색 구분은 도면 확인 필요 | 오른쪽 열 호박색, 왼쪽 열 흰색(가정) | 도면(`2003994-091.html`)과 색 규격 대조 |
+| PROG 램프: 시작 시 프로그램 알람 보고에 사용, RSET이 램프를 끔 | 알람 시 PROG 점등, RSET으로 해제 (일치) | - |
+| 십진은 부호 점등, 8진은 부호 소등 | 동일 (일치) | - |
+| VERB/NOUN은 평소 점등, **사용자 입력이 필요할 때 깜박임** | 깜박임 없음 | M2: Flash 상태 추가 |
+| V35E: 모든 램프 점등, 레지스터 +88888, **VERB/NOUN의 88은 깜박임**, 약 5초 후 종료(**종료 후 숫자는 남음**, STBY/RESTART는 점등 안 됨) | 5초 점등, 종료 시 원래 표시로 복귀, STBY/RESTART도 점등 | M2: 깜박임, 종료 후 값 유지 여부, STBY/RESTART 제외 검토 |
+| V16N36E: R1 시, R2 분, R3 1/100초, **1초마다 갱신** | 50ms마다 갱신 | M2: 모니터 갱신 주기 1초로 변경 검토 |
+| 데이터 로드(V21 등): 8진은 `+` 불필요, **십진은 `+`와 5자리 모두 필요**. CLR은 R1의 입력을 지움 | 미지원 (부호 키는 OPR ERR) | M2 |
+| V37E 00E → P00 / PRO와 V33E는 다음 단계 진행 / KEY REL 램프는 새 모니터가 기존 모니터를 끊을 때 깜박임 | 미지원 | M2 |
+| Luminary 시작 점검 순서: V35E → V37E00E → V25N01E ... | - | M2 이후 "체크리스트 모드" 시나리오 후보 |
+
+참고: yaDSKY 설명의 "PROG 램프는 입력 대기 시 점등"은 Colossus/Luminary 프로그램 알람 동작과 표현이 달라 보인다. 구현은 알람 기준(위 표)으로 유지하되, M2에서 Delco 매뉴얼로 다시 확인한다.
+
+주의: 이 단계에서 직접 확인한 것은 위 표의 Noun 정의(Luminary 099)와 DSKY 구성 설명이다. 램프 색상, 키 격자의 열 배정(CLR/PRO/KEY REL, ENTR/RSET의 열), M2 이후 동작 규칙의 세부는 **원본 도면/사진과 최종 대조가 필요한 가정**으로 남아 있다.
