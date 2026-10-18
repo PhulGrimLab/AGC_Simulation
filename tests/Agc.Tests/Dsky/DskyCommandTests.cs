@@ -95,11 +95,79 @@ public sealed class DskyCommandTests
     }
 
     [TestMethod]
-    public void UnsupportedNoun62_LightsOprErr()
+    public void UnsupportedNoun64_LightsOprErr()
     {
-        _dsky.Press("V06N62E");
+        _dsky.Press("V06N64E");
 
         Assert.IsTrue(_dsky.Display.Lamps.HasFlag(DskyLamps.OprErr));
+    }
+
+    [TestMethod]
+    public void V06N62_OnCommandModule_ShowsInertialVelocityAltRateAndAltitude()
+    {
+        _telemetry.Current = FakeTelemetry.Make(speed: 304.8, verticalSpeed: -30.48, altitude: 18520, program: 11, vehicle: AgcVehicle.Csm);
+
+        _dsky.Press("V06N62E");
+
+        Assert.AreEqual("+01000", _dsky.Display.R1);
+        Assert.AreEqual("-00100", _dsky.Display.R2);
+        Assert.AreEqual("+00100", _dsky.Display.R3);
+        Assert.IsFalse(_dsky.Display.Lamps.HasFlag(DskyLamps.OprErr));
+    }
+
+    [TestMethod]
+    public void V06N62_OnLunarModule_ShowsTimeToIgnitionInMiddleRegister()
+    {
+        _telemetry.Current = FakeTelemetry.Make(speed: 304.8, timeToNextPhase: TimeSpan.FromSeconds(507), vehicle: AgcVehicle.Lm);
+
+        _dsky.Press("V06N62E");
+
+        Assert.AreEqual("+10000", _dsky.Display.R1);
+        Assert.AreEqual("+08 27", _dsky.Display.R2);
+    }
+
+    [TestMethod]
+    public void DescentNouns_OnCommandModule_LightOprErr()
+    {
+        _telemetry.Current = FakeTelemetry.Make(program: 11, vehicle: AgcVehicle.Csm);
+
+        _dsky.Press("V06N63E");
+        Assert.IsTrue(_dsky.Display.Lamps.HasFlag(DskyLamps.OprErr), "N63은 사령선에서는 재진입 노운이다(미지원)");
+        _dsky.Press("RV06N68E");
+        Assert.IsTrue(_dsky.Display.Lamps.HasFlag(DskyLamps.OprErr));
+    }
+
+    [TestMethod]
+    public void Display_ReportsTheVehicleOfTheTelemetry()
+    {
+        _telemetry.Current = FakeTelemetry.Make(vehicle: AgcVehicle.Csm);
+        Assert.AreEqual(AgcVehicle.Csm, _dsky.Display.Vehicle);
+
+        _telemetry.Current = FakeTelemetry.Make(vehicle: AgcVehicle.Lm);
+        Assert.AreEqual(AgcVehicle.Lm, _dsky.Display.Vehicle);
+    }
+
+    [TestMethod]
+    public void V35_LampTest_OnCommandModule_DoesNotLightAltAndVel()
+    {
+        _telemetry.Current = FakeTelemetry.Make(program: 11, vehicle: AgcVehicle.Csm);
+
+        _dsky.Press("V35E");
+
+        var lamps = _dsky.Display.Lamps;
+        Assert.IsFalse(lamps.HasFlag(DskyLamps.Alt), "사령선 DSKY에는 ALT 램프가 없다");
+        Assert.IsFalse(lamps.HasFlag(DskyLamps.Vel), "사령선 DSKY에는 VEL 램프가 없다");
+        Assert.AreEqual(DskyLamps.All & ~(DskyLamps.Alt | DskyLamps.Vel), lamps);
+    }
+
+    [TestMethod]
+    public void V35_LampTest_OnLunarModule_LightsAltAndVel()
+    {
+        _telemetry.Current = FakeTelemetry.Make(program: 63, vehicle: AgcVehicle.Lm);
+
+        _dsky.Press("V35E");
+
+        Assert.AreEqual(DskyLamps.All, _dsky.Display.Lamps);
     }
 
     [TestMethod]

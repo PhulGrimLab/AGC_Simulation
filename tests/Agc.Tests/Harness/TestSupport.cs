@@ -11,14 +11,19 @@ internal sealed class FakeTelemetry : ITelemetrySource
 {
     public AgcTelemetry Current { get; set; } = Make();
 
-    /// <summary>필요한 값만 지정해 텔레메트리를 만든다(나머지는 0).</summary>
+    /// <summary>
+    /// 필요한 값만 지정해 텔레메트리를 만든다(나머지는 0).
+    /// 우주선 기본값은 달착륙선(LM)이다: 기존 테스트가 하강 노운(N63/N68)과 ALT/VEL 램프를 전제로 작성되었기 때문이다.
+    /// 사령선 동작은 vehicle: AgcVehicle.Csm 으로 명시한다.
+    /// </summary>
     public static AgcTelemetry Make(
         TimeSpan? met = null, int program = 0, double altitude = 0, double speed = 0,
         double verticalSpeed = 0, double lat = 0, double lon = 0,
-        double range = 0, TimeSpan? timeToNextPhase = null)
+        double range = 0, TimeSpan? timeToNextPhase = null, AgcVehicle vehicle = AgcVehicle.Lm)
     {
         return new AgcTelemetry(
-            met ?? TimeSpan.Zero, program, altitude, speed, verticalSpeed, lat, lon, range, timeToNextPhase ?? TimeSpan.Zero);
+            met ?? TimeSpan.Zero, program, altitude, speed, verticalSpeed, lat, lon, range,
+            timeToNextPhase ?? TimeSpan.Zero, vehicle);
     }
 }
 

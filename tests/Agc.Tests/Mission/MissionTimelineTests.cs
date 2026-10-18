@@ -157,6 +157,28 @@ public sealed class MissionTimelineTests
     }
 
     [TestMethod]
+    public void Snapshot_TelemetryCarriesTheVehicleOfTheCurrentKeyframe()
+    {
+        var csm = new MissionKeyframe(TimeSpan.Zero, "a", "d", 0, CelestialBody.Moon, 0, 0, 0, 0);
+        var lm = new MissionKeyframe(TimeSpan.FromSeconds(100), "b", "d", 0, CelestialBody.Moon, 0, 0, 0, 0, AgcVehicle.Lm);
+        var timeline = new MissionTimeline([csm, lm], []);
+
+        Assert.AreEqual(AgcVehicle.Csm, timeline.GetSnapshot(TimeSpan.FromSeconds(99)).Telemetry.Vehicle, "기본은 사령선");
+        Assert.AreEqual(AgcVehicle.Lm, timeline.GetSnapshot(TimeSpan.FromSeconds(100)).Telemetry.Vehicle);
+    }
+
+    [TestMethod]
+    public void DisplayRequests_DefaultToNone_AndAreExposedWhenGiven()
+    {
+        var frame = new MissionKeyframe(TimeSpan.Zero, "a", "d", 0, CelestialBody.Earth, 0, 0, 0, 0);
+
+        Assert.IsEmpty(new MissionTimeline([frame], []).DisplayRequests);
+
+        var request = new MissionDisplayRequest(TimeSpan.Zero, 16, 62, false);
+        Assert.AreEqual(request, new MissionTimeline([frame], [], null, [request]).DisplayRequests.Single());
+    }
+
+    [TestMethod]
     public void Alarms_AreSortedByMet()
     {
         var timeline = new MissionTimeline(

@@ -162,8 +162,14 @@ public sealed class CompositeScenarioUiTests
         Assert.AreEqual("88", ui.Verb, "램프 테스트 중에는 키가 무시된다");
         ui.Run(5.2);
 
-        Assert.IsEmpty(ui.LitLamps.Where(l => l != "PROG"), "램프 테스트 종료");
+        // 5.2초 × 60배속 = 312초: 그 사이 PDI(102:33:05)를 지나 프로그램이 N63 표시를 요청한다.
+        // 램프 테스트 중이라 바로 표시하지 못하고 KEY REL로 알린다.
+        CollectionAssert.AreEqual(new[] { "KEY REL" }, ui.LitLamps.ToList(), "램프 테스트는 끝났고, 대기 중인 표시 요청만 KEY REL로 알린다");
         Assert.AreEqual(before + 5.2 * 60, ui.MetSeconds, 1e-6, "그 동안에도 미션은 계속 진행된다");
+        Assert.AreEqual("63", ui.Prog);
+        ui.Press("K");
+        Assert.AreEqual("63", ui.Noun, "KEY REL을 누르면 대기하던 N63이 나타난다");
+        Assert.IsFalse(ui.LampLit("KEY REL"));
 
         ui.Press("V16N36E");
         Assert.AreEqual("16", ui.Verb);

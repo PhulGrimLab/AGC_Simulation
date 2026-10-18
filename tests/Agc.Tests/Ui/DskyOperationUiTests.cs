@@ -16,18 +16,19 @@ public sealed class DskyOperationUiTests
 
     [STATestMethod]
     [TestCategory("UI-D01")]
-    public void InitialScreen_ShowsLaunchProgramAndBlankDisplay()
+    public void InitialScreen_P11ShowsTheVelocityMonitorOnTheCommandModuleDsky()
     {
         using var ui = new UiDriver();
 
         Assert.AreEqual("11", ui.Prog, "발사 시점의 프로그램은 P11");
-        Assert.AreEqual("  ", ui.Verb);
-        Assert.AreEqual("  ", ui.Noun);
-        Assert.AreEqual("      ", ui.R1);
-        Assert.AreEqual("      ", ui.R2);
-        Assert.AreEqual("      ", ui.R3);
-        Assert.IsEmpty(ui.LitLamps, "처음에는 켜진 램프가 없다");
-        Assert.IsTrue(ui.VerbNounVisible);
+        Assert.AreEqual("16", ui.Verb, "P11이 V16 N62를 스스로 띄운다");
+        Assert.AreEqual("62", ui.Noun);
+        Assert.AreEqual("+00000", ui.R1, "관성속도");
+        Assert.AreEqual("+01357", ui.R2, "고도변화율(ft/s)");
+        Assert.AreEqual("+00000", ui.R3, "고도(0.1 nm)");
+        CollectionAssert.AreEqual(new[] { "COMP ACTY" }, ui.LitLamps.ToList(), "모니터 동작 중 COMP ACTY만 켜져 있다");
+        Assert.IsTrue(ui.VerbNounVisible, "깜박이지 않는 표시");
+        StringAssert.Contains(ui.VehicleText, "사령선");
         ui.AssertDisplayWellFormed();
     }
 
@@ -39,7 +40,10 @@ public sealed class DskyOperationUiTests
 
         ui.Press("V35E");
 
-        Assert.HasCount(UiDriver.AllLampLabels.Length, ui.LitLamps, "램프 13개 모두 점등");
+        // 발사 시점은 사령선 DSKY: ALT/VEL 램프가 없으므로 11개가 점등한다.
+        Assert.HasCount(UiDriver.AllLampLabels.Length - 2, ui.LitLamps, "사령선 램프 11개 점등");
+        Assert.IsFalse(ui.LampLit("ALT"));
+        Assert.IsFalse(ui.LampLit("VEL"));
         Assert.AreEqual("88", ui.Verb);
         Assert.AreEqual("88", ui.Noun);
         Assert.AreEqual("+88888", ui.R1);
@@ -52,7 +56,7 @@ public sealed class DskyOperationUiTests
         Assert.IsTrue(ui.VerbNounVisible);
 
         ui.Run(4.8);
-        Assert.HasCount(UiDriver.AllLampLabels.Length, ui.LitLamps, "5초가 지나기 전에는 계속 점등");
+        Assert.HasCount(UiDriver.AllLampLabels.Length - 2, ui.LitLamps, "5초가 지나기 전에는 계속 점등");
 
         ui.Run(0.4);
         Assert.IsEmpty(ui.LitLamps, "5초 후 램프는 꺼진다");
@@ -206,7 +210,8 @@ public sealed class DskyOperationUiTests
     {
         using var ui = new UiDriver();
 
-        foreach (var command in new[] { "V99E", "V06N62E", "V06N99E", "V16E", "V05N36E", "V21N36E", "V25N43E", "E" })
+        // 발사 시점은 사령선: N63(하강)은 사령선에서 지원하지 않는다. N62는 사령선/착륙선 모두 지원한다.
+        foreach (var command in new[] { "V99E", "V06N63E", "V06N68E", "V06N64E", "V06N99E", "V16E", "V05N36E", "V21N36E", "V25N43E", "E" })
         {
             ui.Press("R");
             ui.Press(command);

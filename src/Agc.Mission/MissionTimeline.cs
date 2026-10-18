@@ -21,7 +21,54 @@ public sealed record MissionKeyframe(
     double AltitudeMeters,
     double SpeedMetersPerSecond,
     double LatitudeDegrees,
-    double LongitudeDegrees);
+    double LongitudeDegrees,
+    AgcVehicle Vehicle = AgcVehicle.Csm,
+    MissionScene Scene = MissionScene.EarthOrbit);
+
+/// <summary>
+/// 단계의 시각 장면 종류. 화면 렌더러가 장면별로 다른 그림(배경, 천체, 우주선, 분사)을 그린다.
+/// </summary>
+public enum MissionScene
+{
+    /// <summary>발사대에서 상승(대기권 → 우주). 새턴 V.</summary>
+    Launch,
+
+    /// <summary>지구 저궤도(지구 근접 장면).</summary>
+    EarthOrbit,
+
+    /// <summary>지구와 달 사이를 비행(지구/달 전경과 궤적).</summary>
+    Translunar,
+
+    /// <summary>달 궤도(달 지평선 위의 사령선/착륙선).</summary>
+    LunarOrbit,
+
+    /// <summary>달 표면을 향한 동력 하강.</summary>
+    Descent,
+
+    /// <summary>달 표면(착륙선, 우주인).</summary>
+    Surface,
+
+    /// <summary>달 표면에서 이륙한 상승단.</summary>
+    Ascent,
+
+    /// <summary>달 궤도에서 랑데부/도킹.</summary>
+    Docking,
+
+    /// <summary>달에서 지구로 돌아오는 비행.</summary>
+    TransEarth,
+
+    /// <summary>대기권 재진입(플라스마).</summary>
+    Entry,
+
+    /// <summary>낙하산 강하와 착수(바다).</summary>
+    Splashdown,
+}
+
+/// <summary>
+/// 프로그램이 특정 단계가 시작되는 순간 DSKY에 스스로 띄우는 표시(예: P11의 V16 N62).
+/// Met는 단계(키프레임) 시작 시각과 같아야 한다.
+/// </summary>
+public sealed record MissionDisplayRequest(TimeSpan Met, int Verb, int Noun, bool Flash);
 
 /// <summary>사거리 계산의 목표 지점(예: 착륙 지점). 지정한 천체 표면 위의 위·경도이다.</summary>
 public sealed record MissionTarget(CelestialBody Body, double LatitudeDegrees, double LongitudeDegrees);
@@ -53,10 +100,13 @@ public sealed class MissionTimeline
     private readonly MissionTarget? _target;
 
     /// <param name="target">사거리(RangeToTargetMeters) 계산 대상. null이면 사거리는 항상 0이다.</param>
+    /// <param name="displayRequests">단계 시작 때 프로그램이 띄우는 표시. null이면 없음.</param>
     public MissionTimeline(
-        IReadOnlyList<MissionKeyframe> keyframes, IReadOnlyList<MissionAlarm> alarms, MissionTarget? target = null)
+        IReadOnlyList<MissionKeyframe> keyframes, IReadOnlyList<MissionAlarm> alarms, MissionTarget? target = null,
+        IReadOnlyList<MissionDisplayRequest>? displayRequests = null)
     {
         _target = target;
+        DisplayRequests = displayRequests ?? [];
         if (keyframes.Count == 0)
         {
             throw new ArgumentException("키프레임이 최소 1개 필요합니다.", nameof(keyframes));
@@ -77,6 +127,9 @@ public sealed class MissionTimeline
     public IReadOnlyList<MissionKeyframe> Keyframes { get; }
 
     public IReadOnlyList<MissionAlarm> Alarms { get; }
+
+    /// <summary>단계 시작 때 프로그램이 띄우는 표시 목록.</summary>
+    public IReadOnlyList<MissionDisplayRequest> DisplayRequests { get; }
 
     /// <summary>미션 총 길이(마지막 키프레임의 MET).</summary>
     public TimeSpan Duration => Keyframes[^1].Met;
@@ -113,7 +166,8 @@ public sealed class MissionTimeline
         var timeToNextPhase = next is null ? TimeSpan.Zero : next.Met - met;
         var range = RangeToTarget(current.Body, altitude, latitude, longitude);
         var telemetry = new AgcTelemetry(
-            met, current.ProgramNumber, altitude, speed, verticalSpeed, latitude, longitude, range, timeToNextPhase);
+            met, current.ProgramNumber, altitude, speed, verticalSpeed, latitude, longitude, range, timeToNextPhase,
+            current.Vehicle);
         return new MissionSnapshot(met, current, index, current.Body, telemetry);
     }
 

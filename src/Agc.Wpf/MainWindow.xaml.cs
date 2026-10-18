@@ -25,6 +25,10 @@ public partial class MainWindow : Window
     private const double MetersPerKilometer = 1000.0;
     private const double KilometersPerHourFactor = 3.6;
 
+    // Apollo 11의 컴퓨터: 사령선 CMC는 Colossus 2A(Comanche 055), 착륙선 LGC는 Luminary 1A(099)
+    private const string CommandModuleCaption = "사령선 컴퓨터 · CMC · Colossus 2A (Comanche 055)";
+    private const string LunarModuleCaption = "착륙선 컴퓨터 · LGC · Luminary 1A (099)";
+
     private readonly ILog _log;
     private readonly MissionSimulator _sim;
     private readonly DskyController _dsky;
@@ -33,6 +37,7 @@ public partial class MainWindow : Window
     private TimeSpan _lastTick;
     private bool _updatingSlider;
     private bool _updatingPhaseBox;
+    private int _guidePhaseIndex = -1;
 
     public MainWindow()
     {
@@ -42,7 +47,9 @@ public partial class MainWindow : Window
         var timeline = Apollo11Mission.Create();
         _sim = new MissionSimulator(timeline, _log);
         _dsky = new DskyController(_sim, _log, _sim);
-        _sim.AlarmRaised += alarm => _dsky.RaiseAlarm(alarm.Code);
+        // 알람(PROG 램프)과 단계 시작 때 프로그램이 띄우는 표시(P11의 N62, 하강의 N63)를 DSKY에 연결한다.
+        _ = new AgcMissionLink(_sim, _dsky);
+        GuidePanel.RunKeysRequested += RunGuideKeys;
         _sim.SpeedMultiplier = ReadSpeedMultiplier();
 
         TimelineSlider.Maximum = timeline.Duration.TotalSeconds;
@@ -113,6 +120,7 @@ public partial class MainWindow : Window
         var t = snapshot.Telemetry;
 
         Dsky.Display = _dsky.Display;
+        VehicleText.Text = t.Vehicle == AgcVehicle.Lm ? LunarModuleCaption : CommandModuleCaption;
 
         PhaseNameText.Text = $"P{snapshot.Phase.ProgramNumber:D2} · {snapshot.Phase.PhaseName}";
         PhaseDescriptionText.Text = snapshot.Phase.Description;
@@ -145,6 +153,28 @@ public partial class MainWindow : Window
         PlayButton.Content = _sim.IsRunning ? "⏸ 일시정지" : "▶ 재생";
 
         Illustration.Update(snapshot, _sim.Timeline);
+
+        // 단계가 바뀔 때만 가이드를 다시 만든다(매 틱 다시 만들면 스크롤과 버튼이 계속 초기화된다).
+        if (snapshot.PhaseIndex != _guidePhaseIndex)
+        {
+            _guidePhaseIndex = snapshot.PhaseIndex;
+            GuidePanel.Show(Apollo11Guides.For(snapshot.Phase.PhaseName), snapshot.Phase.PhaseName);
+        }
+        else
+        {
+            // 같은 단계이면 가이드는 그대로 둔다.
+        }
+    }
+
+    /// <summary>가이드의 [실행] 버튼: 키 순서를 DSKY에 그대로 누르고 화면을 갱신한다.</summary>
+    private void RunGuideKeys(string keys)
+    {
+        foreach (var key in DskyKeyNotation.Parse(keys))
+        {
+            _dsky.PressKey(key);
+        }
+
+        RefreshView();
     }
 
     private static string FormatMet(TimeSpan met)

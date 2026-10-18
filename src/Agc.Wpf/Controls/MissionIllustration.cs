@@ -1,121 +1,71 @@
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using Agc.Mission;
+using Agc.Wpf.Scene;
 
 namespace Agc.Wpf.Controls;
 
 /// <summary>
-/// 미션 단계를 단순한 벡터 도식으로 보여주는 캔버스: 별 배경, 기준 천체(지구/달), 우주선 마커.
-/// 고도는 로그 스케일로 천체 표면 위 높이에 대응시키고, 가로 위치는 현재 단계 안의 진행률을 따른다.
-/// 실제 NASA 사진 등을 쓰게 되면 이 컨트롤을 이미지 표시로 교체한다.
-/// UI 스레드 전용이며 Owner는 MainWindow이다.
+/// 미션 장면 화면: 현재 단계(발사, 궤도, 달 전이, 하강, 표면, 재진입, 착수 …)에 맞는 그림을 그린다.
+/// - 그림 자체는 <see cref="SceneRenderer"/>가 그리고, 이 컨트롤은 미션 상태를 받아 다시 그리게 하는 역할만 한다.
+/// - 지구/달은 NASA 텍스처를 구 모양으로 렌더링한 이미지, 우주선/지형은 코드로 그린 벡터이다.
+/// - Owner: MainWindow. Lifetime: 창과 동일. UI 스레드 전용.
 /// </summary>
-public sealed class MissionIllustration : Canvas
+public sealed class MissionIllustration : FrameworkElement
 {
-    private const int StarCount = 90;
-    private const int StarSeed = 11;
-    private const double MaxAltitudeLogMeters = 9.0;
-    private const double BodyRadiusRatio = 0.55;
-    private const double BodyCenterYRatio = 1.15;
-    private const double MarkerSize = 16;
-    private const double MarkerMinX = 0.12;
-    private const double MarkerXSpan = 0.76;
-    // 우주선 마커가 표면 위로 올라갈 수 있는 높이의 비율(위쪽 가장자리에 붙지 않도록 여유를 둔다).
-    private const double MarkerAltitudeScale = 0.9;
-    private const double StarSize = 2;
-    private const double StarMinOpacity = 0.3;
-    private const double StarOpacitySpan = 0.7;
+    private const double MillisecondsPerSecond = 1000.0;
 
-    private static Brush FrozenBrush(Color color)
-    {
-        var brush = new SolidColorBrush(color);
-        brush.Freeze();
-        return brush;
-    }
-
-    private static readonly Brush EarthBrush = FrozenBrush(Color.FromRgb(0x2E, 0x6F, 0xD8));
-    private static readonly Brush MoonBrush = FrozenBrush(Color.FromRgb(0x9A, 0x9A, 0x9A));
-
-    private readonly Ellipse _body = new();
-    private readonly Polygon _marker = new()
-    {
-        Fill = Brushes.White,
-        Points = [new Point(MarkerSize / 2, 0), new Point(MarkerSize, MarkerSize), new Point(0, MarkerSize)],
-    };
-    private readonly List<Ellipse> _stars = [];
-    private MissionSnapshot? _last;
+    private SceneContext? _context;
 
     public MissionIllustration()
     {
         ClipToBounds = true;
-        Background = FrozenBrush(Color.FromRgb(0x05, 0x07, 0x10));
-        SizeChanged += (_, _) => Rebuild();
+        SnapsToDevicePixels = false;
     }
 
-    /// <summary>현재 미션 상태에 맞춰 천체 색상과 마커 위치를 갱신한다.</summary>
+    /// <summary>지금 그리고 있는 장면 종류(아직 상태를 받기 전이면 null).</summary>
+    public MissionScene? CurrentScene => _context?.Scene;
+
+    /// <summary>현재 장면의 설명 문구(화면 왼쪽 위에 표시되는 것과 같다).</summary>
+    public string? CurrentCaption => _context is null ? null : SceneRenderer.Caption(_context);
+
+    /// <summary>현재 미션 상태에 맞춰 장면을 갱신한다.</summary>
     public void Update(MissionSnapshot snapshot, MissionTimeline timeline)
     {
-        _last = snapshot;
-        if (ActualWidth <= 0 || ActualHeight <= 0)
+        _context = SceneContext.From(snapshot, timeline);
+        InvalidateVisual();
+    }
+
+    protected override void OnRender(DrawingContext drawingContext)
+    {
+        var size = new Size(ActualWidth, ActualHeight);
+        drawingContext.DrawRectangle(Brushes.Black, null, new Rect(size));
+        if (_context is null)
         {
             return;
         }
 
-        _body.Fill = snapshot.Body == CelestialBody.Earth ? EarthBrush : MoonBrush;
-
-        var phase = snapshot.Phase;
-        var nextMet = snapshot.PhaseIndex + 1 < timeline.Keyframes.Count
-            ? timeline.Keyframes[snapshot.PhaseIndex + 1].Met
-            : phase.Met;
-        var span = (nextMet - phase.Met).TotalSeconds;
-        var fraction = span > 0 ? (snapshot.Met - phase.Met).TotalSeconds / span : 1.0;
-
-        var surfaceY = ActualHeight * (BodyCenterYRatio - BodyRadiusRatio);
-        var altitudeRatio = Math.Clamp(Math.Log10(1 + snapshot.Telemetry.AltitudeMeters) / MaxAltitudeLogMeters, 0, 1);
-        var markerY = surfaceY - altitudeRatio * surfaceY * MarkerAltitudeScale - MarkerSize;
-
-        SetLeft(_marker, ActualWidth * (MarkerMinX + MarkerXSpan * fraction) - MarkerSize / 2);
-        SetTop(_marker, Math.Max(markerY, 0));
+        // 불꽃 일렁임 같은 짧은 애니메이션은 실시간 시계를 쓴다(미션 시간과 무관).
+        var time = Environment.TickCount64 / MillisecondsPerSecond;
+        SceneRenderer.Draw(drawingContext, size, _context, time, VisualTreeHelper.GetDpi(this).PixelsPerDip);
     }
 
-    /// <summary>크기가 바뀌면 별/천체/마커를 새로 배치한다.</summary>
-    private void Rebuild()
+    /// <summary>
+    /// 장면을 비트맵으로 렌더링한다(테스트/스크린샷용). 컨트롤을 화면에 띄우지 않아도 지정한 크기로 그린다.
+    /// </summary>
+    internal static System.Windows.Media.Imaging.RenderTargetBitmap RenderOffscreen(
+        MissionSnapshot snapshot, MissionTimeline timeline, int width, int height, double time = 0)
     {
-        Children.Clear();
-        _stars.Clear();
-        var random = new Random(StarSeed);
-        for (var i = 0; i < StarCount; i++)
+        var context = SceneContext.From(snapshot, timeline);
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
         {
-            var star = new Ellipse
-            {
-                Width = StarSize,
-                Height = StarSize,
-                Fill = Brushes.White,
-                Opacity = StarMinOpacity + random.NextDouble() * StarOpacitySpan,
-            };
-            SetLeft(star, random.NextDouble() * ActualWidth);
-            SetTop(star, random.NextDouble() * ActualHeight);
-            _stars.Add(star);
-            Children.Add(star);
+            dc.DrawRectangle(Brushes.Black, null, new Rect(0, 0, width, height));
+            SceneRenderer.Draw(dc, new Size(width, height), context, time, 1.0);
         }
 
-        var radius = ActualHeight * BodyRadiusRatio;
-        _body.Width = radius * 2;
-        _body.Height = radius * 2;
-        SetLeft(_body, ActualWidth / 2 - radius);
-        SetTop(_body, ActualHeight * BodyCenterYRatio - radius);
-        Children.Add(_body);
-        Children.Add(_marker);
-
-        if (_last is not null)
-        {
-            _body.Fill = _last.Body == CelestialBody.Earth ? EarthBrush : MoonBrush;
-        }
-        else
-        {
-            _body.Fill = EarthBrush;
-        }
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        return bitmap;
     }
 }

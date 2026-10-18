@@ -91,6 +91,53 @@ public sealed class Apollo11MissionDataTests
     }
 
     [TestMethod]
+    public void Vehicle_IsCommandModuleExceptBetweenUndockingAndDocking()
+    {
+        var expected = new (TimeSpan Met, AgcVehicle Vehicle)[]
+        {
+            (TimeSpan.Zero, AgcVehicle.Csm),
+            (new TimeSpan(75, 49, 50), AgcVehicle.Csm),
+            (new TimeSpan(100, 11, 59), AgcVehicle.Csm),
+            (new TimeSpan(100, 12, 0), AgcVehicle.Lm),
+            (new TimeSpan(102, 33, 5), AgcVehicle.Lm),
+            (new TimeSpan(102, 45, 40), AgcVehicle.Lm),
+            (new TimeSpan(109, 24, 15), AgcVehicle.Lm),
+            (new TimeSpan(124, 29, 15), AgcVehicle.Lm),
+            (new TimeSpan(128, 2, 59), AgcVehicle.Lm),
+            (new TimeSpan(128, 3, 0), AgcVehicle.Csm),
+            (new TimeSpan(135, 23, 42), AgcVehicle.Csm),
+            (new TimeSpan(195, 18, 35), AgcVehicle.Csm),
+        };
+
+        foreach (var (met, vehicle) in expected)
+        {
+            Assert.AreEqual(vehicle, Timeline.GetSnapshot(met).Telemetry.Vehicle, $"MET {met}");
+        }
+    }
+
+    [TestMethod]
+    public void DisplayRequests_AreDefinedForLaunchMonitorAndPoweredDescent()
+    {
+        var requests = Timeline.DisplayRequests;
+
+        Assert.IsTrue(requests.Any(r => r.Met == TimeSpan.Zero && r.Verb == 16 && r.Noun == 62), "P11: V16 N62");
+        Assert.IsTrue(requests.Any(r => r.Met == new TimeSpan(102, 33, 5) && r.Verb == 16 && r.Noun == 63), "P63: V16 N63");
+        foreach (var request in requests)
+        {
+            Assert.IsTrue(Timeline.Keyframes.Any(k => k.Met == request.Met), $"요청은 단계 시작 시각에 있어야 한다: {request.Met}");
+        }
+    }
+
+    [TestMethod]
+    public void DescentNounRequest_IsOnlyUsedOnTheLunarModule()
+    {
+        foreach (var request in Timeline.DisplayRequests.Where(r => r.Noun is 63 or 68))
+        {
+            Assert.AreEqual(AgcVehicle.Lm, Timeline.GetSnapshot(request.Met).Telemetry.Vehicle, $"N{request.Noun}");
+        }
+    }
+
+    [TestMethod]
     public void DescentAlarms_FallDuringDescentPrograms()
     {
         // 공개 기록: 1202 4회 + 1201 1회. 1201은 P64 진입 후(102:41:32 이후)에 발생했다.

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Agc.Core\Agc.Core.csproj" />
@@ -15,6 +15,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Agc.Tests" />
+  </ItemGroup>
+
+  <!-- NASA 공개 텍스처(지구/달). 코드에서 매니페스트 리소스로 읽는다(Application 없이도 동작). 출처: doc/ASSETS_CREDITS.md -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Textures\*.jpg" LogicalName="Agc.Wpf.Assets.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

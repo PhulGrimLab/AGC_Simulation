@@ -2,13 +2,17 @@ namespace Agc.Core;
 
 /// <summary>
 /// 지원하는 Noun의 번호와 레지스터(R1~R3) 표시 형식을 정의한다. 상태가 없는 변환 유틸리티.
-/// 정의는 Luminary 099 소스(PINBALL_NOUN_TABLES.agc)의 Noun 표를 따른다:
-///   N09 ALARM CODES            3COMP OCTAL ONLY
-///   N36 TIME OF AGC CLOCK      3COMP HMS (시, 분, 초×100)
-///   N43 LAT / LONG / ALTITUDE  DPDEG XXX.XX deg, DPDEG XXX.XX deg, POS4 XXXX.X nm
-///   N63 |V| / ALT RATE / COMPUTED ALTITUDE   VEL3 XXXX.X ft/s, VEL3 XXXX.X ft/s, COMP ALT XXXXX. ft
-///   N68 SLANT RANGE TO LANDING SITE / TIME TO GO IN BRAKING / LR ALT - COMPUTED ALT
+/// 정의는 Luminary 099(달착륙선)와 Comanche 055(사령선) 소스의 PINBALL_NOUN_TABLES.agc를 따른다.
+/// 같은 번호라도 우주선에 따라 정의가 다르다:
+///   공통  N09 ALARM CODES            3COMP OCTAL ONLY
+///   공통  N36 TIME OF AGC CLOCK      3COMP HMS (시, 분, 초×100)
+///   공통  N43 LAT / LONG / ALTITUDE  DPDEG XXX.XX deg, DPDEG XXX.XX deg, POS4 XXXX.X nm
+///   사령선 N62 INERTIAL VEL MAG / ALT RATE (HDOT) / ALT ABOVE PAD RADIUS   VEL2 XXXXX. ft/s, VEL2 XXXXX. ft/s, POS4 XXXX.X nm
+///   착륙선 N62 ABS VELOCITY / TIME TO IGNITION / DELTA V (ACCUMULATED)     VEL3 XXXX.X ft/s, MIN/SEC XXbXX, VEL3 XXXX.X ft/s
+///   착륙선 N63 |V| / ALT RATE / COMPUTED ALTITUDE   VEL3 XXXX.X ft/s, VEL3 XXXX.X ft/s, COMP ALT XXXXX. ft
+///   착륙선 N68 SLANT RANGE TO LANDING SITE / TIME TO GO IN BRAKING / LR ALT - COMPUTED ALT
 ///                              POS7 XXXX.X nm, MIN/SEC XXbXX, COMP ALT XXXXX. ft
+/// 사령선의 N63(재진입 RTGO/VIO/TTE)과 N68(뱅크각/속도/Rdot)은 아직 지원하지 않는다.
 /// 십진 표시 레지스터는 항상 부호(+/-)를 가지며, 부호 칸이 공백인 것은 8진 표시(N09)뿐이다.
 /// </summary>
 internal static class DskyNouns
@@ -16,6 +20,7 @@ internal static class DskyNouns
     public const int AlarmCodes = 9;
     public const int ClockTime = 36;
     public const int LatLongAltitude = 43;
+    public const int Velocity = 62;
     public const int LandingVelocity = 63;
     public const int LandingRange = 68;
 
@@ -39,17 +44,48 @@ internal static class DskyNouns
         return noun == ClockTime;
     }
 
-    /// <summary>텔레메트리로 값을 만드는 Noun(36/43/63/68)인지.</summary>
-    public static bool IsTelemetryNoun(int noun)
+    /// <summary>
+    /// 텔레메트리로 값을 만드는 Noun인지. 사령선은 36/43/62, 달착륙선은 36/43/62/63/68이다
+    /// (63/68의 하강 정의는 달착륙선 전용).
+    /// </summary>
+    public static bool IsTelemetryNoun(int noun, AgcVehicle vehicle)
     {
-        return noun is ClockTime or LatLongAltitude or LandingVelocity or LandingRange;
+        return noun switch
+        {
+            ClockTime or LatLongAltitude or Velocity => true,
+            LandingVelocity or LandingRange => vehicle == AgcVehicle.Lm,
+            _ => false,
+        };
     }
 
-    /// <summary>텔레메트리 기반 Noun의 레지스터 3개를 만든다. 미지원 Noun이면 false.</summary>
+    /// <summary>텔레메트리 기반 Noun의 레지스터 3개를 만든다(우주선은 t.Vehicle). 미지원 Noun이면 false.</summary>
     public static bool TryFormat(int noun, AgcTelemetry t, out string[] registers)
     {
+        if (!IsTelemetryNoun(noun, t.Vehicle))
+        {
+            registers = [];
+            return false;
+        }
+
         switch (noun)
         {
+            case Velocity:
+                registers = t.Vehicle == AgcVehicle.Csm
+                    ?
+                    [
+                        // 사령선: VEL2 XXXXX. ft/s (소수 없음), 고도 POS4 XXXX.X nm
+                        Format(t.SpeedMetersPerSecond / MetersPerFoot),
+                        Format(t.VerticalSpeedMetersPerSecond / MetersPerFoot),
+                        Format(t.AltitudeMeters / MetersPerNauticalMile * TenthScale),
+                    ]
+                    :
+                    [
+                        // 착륙선: 점화까지 시간은 다음 단계(점화)까지 남은 시간, 누적 ΔV는 모델링하지 않으므로 0
+                        Format(t.SpeedMetersPerSecond / MetersPerFoot * TenthScale),
+                        FormatMinSec(t.TimeToNextPhase),
+                        Format(0),
+                    ];
+                return true;
             case ClockTime:
                 registers = FormatClock(t.MissionElapsedTime);
                 return true;

@@ -101,6 +101,9 @@ internal sealed class UiDriver : IDisposable
 
     public DskyPanel Panel => Find<DskyPanel>("Dsky");
 
+    /// <summary>오른쪽 아래 단계 가이드 패널.</summary>
+    public PhaseGuidePanel GuidePanel => Find<PhaseGuidePanel>("GuidePanel");
+
     public Slider Slider => Find<Slider>("TimelineSlider");
 
     public ComboBox PhaseBox => Find<ComboBox>("PhaseBox");
@@ -148,6 +151,14 @@ internal sealed class UiDriver : IDisposable
 
     public IReadOnlyList<string> LitLamps => AllLampLabels.Where(LampLit).ToList();
 
+    /// <summary>이 DSKY에 그 램프가 실제로 보이는지(사령선에서는 ALT/VEL 칸이 비어 있다).</summary>
+    public bool LampInstalled(string label)
+    {
+        var box = ((UniformGrid)Panel.FindName("LampGrid")).Children.OfType<Border>()
+            .Single(b => b.Child is TextBlock t && t.Text == label);
+        return box.Visibility == Visibility.Visible;
+    }
+
     // ---- 읽기: 미션 뷰 ----
 
     public string MetText => Text("MetText");
@@ -165,6 +176,9 @@ internal sealed class UiDriver : IDisposable
     public string VerticalSpeedText => Text("VerticalSpeedText");
 
     public string PositionText => Text("PositionText");
+
+    /// <summary>왼쪽 위 캡션(지금 연결된 컴퓨터: 사령선 CMC 또는 착륙선 LGC).</summary>
+    public string VehicleText => Text("VehicleText");
 
     public string PlayLabel => (string)PlayButton.Content;
 

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:Agc.Wpf.Controls"
         Title="Apollo Guidance Computer Simulation — Apollo 11"
-        Width="1500" Height="860" MinWidth="1100" MinHeight="700"
+        Width="1600" Height="980" MinWidth="1100" MinHeight="700"
         Background="#14161A" Foreground="#E6E8EB"
         PreviewKeyDown="Window_PreviewKeyDown">
     <Grid>
@@ -12,53 +12,58 @@
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- 왼쪽 절반: DSKY -->
-        <Viewbox Grid.Column="0" Stretch="Uniform" Margin="16">
-            <c:DskyPanel x:Name="Dsky"/>
-        </Viewbox>
-
-        <!-- 오른쪽 절반: 미션 뷰 -->
-        <Grid Grid.Column="1" Margin="0,16,16,16">
+        <!-- 왼쪽 절반: 지금 연결된 컴퓨터(사령선 CMC / 착륙선 LGC)와 DSKY -->
+        <Grid Grid.Column="0" Margin="16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="VehicleText" Grid.Row="0" HorizontalAlignment="Center" Margin="0,0,0,8"
+                       FontSize="15" FontWeight="SemiBold" Foreground="#B5BAC1"/>
+            <Viewbox Grid.Row="1" Stretch="Uniform">
+                <c:DskyPanel x:Name="Dsky"/>
+            </Viewbox>
+        </Grid>
+
+        <!-- 오른쪽 절반: 미션 뷰(제목/조작 → 장면 → 단계 가이드) -->
+        <Grid Grid.Column="1" Margin="0,16,16,16">
+            <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="1*" MinHeight="200"/>
+                <RowDefinition Height="6"/>
+                <RowDefinition Height="1*" MinHeight="140"/>
             </Grid.RowDefinitions>
 
             <StackPanel Grid.Row="0">
-                <TextBlock x:Name="PhaseNameText" FontSize="26" FontWeight="Bold"/>
-                <TextBlock x:Name="PhaseDescriptionText" FontSize="14" Foreground="#B5BAC1"
-                           TextWrapping="Wrap" Margin="0,4,0,10" MinHeight="40"/>
+                <TextBlock x:Name="PhaseNameText" FontSize="24" FontWeight="Bold"/>
+                <TextBlock x:Name="PhaseDescriptionText" FontSize="13" Foreground="#B5BAC1"
+                           TextWrapping="Wrap" Margin="0,3,0,6" MinHeight="36"/>
             </StackPanel>
 
-            <Border Grid.Row="1" CornerRadius="8" BorderBrush="#3A3F47" BorderThickness="1" ClipToBounds="True">
-                <c:MissionIllustration x:Name="Illustration"/>
-            </Border>
+            <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/>
+                        <RowDefinition/>
+                        <RowDefinition/>
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="MetText" Grid.Row="0" Grid.Column="0" FontSize="20" FontFamily="Consolas" FontWeight="Bold"/>
+                    <TextBlock x:Name="BodyText" Grid.Row="0" Grid.Column="1" FontSize="15"/>
+                    <TextBlock x:Name="AltitudeText" Grid.Row="1" Grid.Column="0" FontSize="15" FontFamily="Consolas"/>
+                    <TextBlock x:Name="SpeedText" Grid.Row="1" Grid.Column="1" FontSize="15" FontFamily="Consolas"/>
+                    <TextBlock x:Name="VerticalSpeedText" Grid.Row="2" Grid.Column="0" FontSize="15" FontFamily="Consolas"/>
+                    <TextBlock x:Name="PositionText" Grid.Row="2" Grid.Column="1" FontSize="15" FontFamily="Consolas"/>
+                </Grid>
 
-            <Grid Grid.Row="2" Margin="0,12,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition/>
-                    <RowDefinition/>
-                    <RowDefinition/>
-                </Grid.RowDefinitions>
-                <TextBlock x:Name="MetText" Grid.Row="0" Grid.Column="0" FontSize="22" FontFamily="Consolas" FontWeight="Bold"/>
-                <TextBlock x:Name="BodyText" Grid.Row="0" Grid.Column="1" FontSize="16"/>
-                <TextBlock x:Name="AltitudeText" Grid.Row="1" Grid.Column="0" FontSize="16" FontFamily="Consolas"/>
-                <TextBlock x:Name="SpeedText" Grid.Row="1" Grid.Column="1" FontSize="16" FontFamily="Consolas"/>
-                <TextBlock x:Name="VerticalSpeedText" Grid.Row="2" Grid.Column="0" FontSize="16" FontFamily="Consolas"/>
-                <TextBlock x:Name="PositionText" Grid.Row="2" Grid.Column="1" FontSize="16" FontFamily="Consolas"/>
-            </Grid>
-
-            <StackPanel Grid.Row="3" Margin="0,12,0,0">
-                <Slider x:Name="TimelineSlider" Minimum="0" IsMoveToPointEnabled="True"
+                <Slider x:Name="TimelineSlider" Minimum="0" IsMoveToPointEnabled="True" Margin="0,8,0,0"
                         ValueChanged="TimelineSlider_ValueChanged"/>
                 <!-- 마지막 열(단계 이동)이 남는 폭을 채워, 좁은 창에서도 잘리지 않는다 -->
-                <Grid Margin="0,8,0,0">
+                <Grid Margin="0,6,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
@@ -66,7 +71,7 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*" MinWidth="120"/>
                     </Grid.ColumnDefinitions>
-                    <Button x:Name="PlayButton" Grid.Column="0" Content="▶ 재생" Width="90" Height="30" Click="PlayButton_Click" Focusable="False"/>
+                    <Button x:Name="PlayButton" Grid.Column="0" Content="▶ 재생" Width="90" Height="28" Click="PlayButton_Click" Focusable="False"/>
                     <TextBlock Grid.Column="1" Text="배속" VerticalAlignment="Center" Margin="16,0,6,0"/>
                     <ComboBox x:Name="SpeedBox" Grid.Column="2" Width="90" SelectionChanged="SpeedBox_SelectionChanged" Focusable="False">
                         <ComboBoxItem Content="1×" Tag="1"/>
@@ -80,6 +85,15 @@
                               SelectionChanged="PhaseBox_SelectionChanged" Focusable="False"/>
                 </Grid>
             </StackPanel>
+
+            <Border Grid.Row="2" CornerRadius="8" BorderBrush="#3A3F47" BorderThickness="1" ClipToBounds="True">
+                <c:MissionIllustration x:Name="Illustration"/>
+            </Border>
+
+            <GridSplitter Grid.Row="3" HorizontalAlignment="Stretch" VerticalAlignment="Center" Height="6"
+                          Background="#2A2F37" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows" Focusable="False"/>
+
+            <c:PhaseGuidePanel x:Name="GuidePanel" Grid.Row="4"/>
         </Grid>
     </Grid>
 </Window>

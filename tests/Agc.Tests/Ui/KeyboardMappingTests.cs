@@ -132,7 +132,7 @@ public sealed class KeyboardMappingTests
             Assert.IsTrue(ui.KeyDown(key), $"{key}는 DSKY 키로 처리되어야 한다");
         }
 
-        Assert.HasCount(UiDriver.AllLampLabels.Length, ui.LitLamps, "램프 테스트: 모든 램프 점등");
+        Assert.HasCount(UiDriver.AllLampLabels.Length - 2, ui.LitLamps, "램프 테스트: 사령선 램프 11개 점등(ALT/VEL 없음)");
         Assert.AreEqual("88", ui.Verb);
         Assert.AreEqual("+88888", ui.R1);
     }

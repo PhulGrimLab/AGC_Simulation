@@ -39,6 +39,7 @@ FEATURES = {
     "Apollo11MissionDataTests": ("단위/연동", "Apollo 11 데이터"),
     "MissionSimulatorTests": ("단위/연동", "미션 시뮬레이터"),
     "AgcMissionIntegrationTests": ("단위/연동", "미션↔DSKY 연동"),
+    "AgcMissionLinkTests": ("단위/연동", "미션↔DSKY 연결(자동 표시)"),
     "DskyPanelUiTests": ("UI", "DSKY 화면 컨트롤"),
     "MainWindowUiTests": ("UI", "메인 창"),
     "KeyboardMappingTests": ("UI", "키보드 입력"),
@@ -46,6 +47,12 @@ FEATURES = {
     "MissionControlUiTests": ("UI", "미션 컨트롤"),
     "CompositeScenarioUiTests": ("UI", "복합 시나리오"),
     "RealWindowTests": ("UI", "실제 창"),
+    "VehicleUiTests": ("UI", "우주선 전환(CM/LM)"),
+    "PlanetRendererTests": ("UI", "천체 렌더러"),
+    "SceneRenderingTests": ("UI", "미션 장면"),
+    "GuidePanelUiTests": ("UI", "단계 가이드 패널"),
+    "PhaseGuideTests": ("단위/연동", "단계 가이드 데이터"),
+    "DskyKeyNotationTests": ("단위/연동", "DSKY 키 표기"),
 }
 CLASS_ORDER = list(FEATURES)
 
@@ -231,7 +238,7 @@ def build(rows, out: pathlib.Path):
         "· 전체 테스트 결과: 모든 자동 테스트(단위/연동/UI)의 실행 결과",
         "· 발견된 결함: 테스트로 발견해 수정한 문제와 원인/조치",
         "분류: 단일(한 기능) / 복합(여러 기능을 엮은 흐름) / 실제 창(창을 띄우거나 프로세스로 실행) / 매핑표(변환 규칙)",
-        "시나리오 ID 접두사: K 키보드, D DSKY 조작, S 미션 컨트롤, C 복합, R 실제 창, P DSKY 화면 컨트롤, W 메인 창",
+        "시나리오 ID 접두사: K 키보드, D DSKY 조작, S 미션 컨트롤, C 복합, R 실제 창, P DSKY 화면 컨트롤, W 메인 창, V 우주선 전환(CM/LM), G 천체·장면 렌더링, U 단계 가이드 패널",
         "참고: 수식 값은 Excel에서 파일을 열 때 계산된다. 시나리오를 추가하면 tools/test_scenario_catalog.py에 항목을 더하고 위 명령으로 다시 만든다.",
     ]
     for i, text in enumerate(legend):

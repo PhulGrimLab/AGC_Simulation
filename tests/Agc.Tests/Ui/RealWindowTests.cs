@@ -134,7 +134,7 @@ public sealed class RealWindowTests
         var lampGrid = ui.BoundsOf((FrameworkElement)ui.Panel.FindName("LampGrid"));
         var r1 = ui.BoundsOf((FrameworkElement)ui.Panel.FindName("R1Display"));
         Assert.AreEqual(0, CountPixels(initial, lampGrid, IsAmber), "초기에는 호박색 램프가 없다");
-        Assert.AreEqual(0, CountPixels(initial, r1, IsLitSegment), "초기에는 켜진 숫자가 없다");
+        Assert.IsGreaterThan(50, CountPixels(initial, r1, IsLitSegment), "발사 시점 P11이 V16 N62 모니터를 띄운다");
 
         // 램프 테스트
         ui.Press("V35E");

@@ -230,6 +230,10 @@ public partial class DskyPanel : UserControl
 
         foreach (var (flag, lamp) in _lamps)
         {
+            // ALT/VEL 램프는 달착륙선 DSKY에만 있다. 사령선에서는 그 칸이 비어 있다(실제 패널도 빈 칸).
+            var installed = display.Vehicle == AgcVehicle.Lm || (flag != DskyLamps.Alt && flag != DskyLamps.Vel);
+            lamp.Box.Visibility = installed ? Visibility.Visible : Visibility.Hidden;
+
             var on = display.Lamps.HasFlag(flag);
             lamp.Box.Background = on ? OnBrush(lamp.Color) : OffBackground(lamp.Color);
             lamp.Text.Foreground = on ? LampOnForeground : OffForeground(lamp.Color);

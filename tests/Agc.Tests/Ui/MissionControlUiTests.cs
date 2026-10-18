@@ -250,27 +250,21 @@ public sealed class MissionControlUiTests
 
     [STATestMethod]
     [TestCategory("UI-S15")]
-    public void Illustration_ChangesBodyColorWhenReferenceBodyChanges()
+    public void Illustration_ShowsTheSceneOfTheCurrentPhase_AndItsCaptionChanges()
     {
         using var ui = new UiDriver();
         var illustration = (Agc.Wpf.Controls.MissionIllustration)ui.Window.FindName("Illustration");
-        illustration.Measure(new System.Windows.Size(400, 300));
-        illustration.Arrange(new System.Windows.Rect(0, 0, 400, 300));
-        illustration.UpdateLayout();
 
-        ui.SeekTo(0, 1, 0);
-        var earth = BodyBrushColor(illustration);
-        ui.SeekTo(102, 0, 0);
-        var moon = BodyBrushColor(illustration);
+        var seen = new Dictionary<MissionScene, string?>();
+        for (var i = 0; i < ui.Timeline.Keyframes.Count; i++)
+        {
+            ui.SelectPhase(i);
+            Assert.AreEqual(ui.Timeline.Keyframes[i].Scene, illustration.CurrentScene, ui.Timeline.Keyframes[i].PhaseName);
+            seen[ui.Timeline.Keyframes[i].Scene] = illustration.CurrentCaption;
+        }
 
-        Assert.AreNotEqual(earth, moon, "지구(파랑)와 달(회색)의 색이 달라야 한다");
-    }
-
-    private static System.Windows.Media.Color BodyBrushColor(Agc.Wpf.Controls.MissionIllustration illustration)
-    {
-        // 별 다음에 천체(큰 타원)가 추가된다: 가장 큰 Ellipse를 천체로 본다.
-        var body = illustration.Children.OfType<System.Windows.Shapes.Ellipse>().MaxBy(e => e.Width)!;
-        return ((System.Windows.Media.SolidColorBrush)body.Fill).Color;
+        Assert.HasCount(11, seen, "11가지 장면이 모두 나타난다");
+        Assert.AreEqual(11, seen.Values.Distinct().Count(), "장면마다 다른 설명 문구");
     }
 
     [STATestMethod]

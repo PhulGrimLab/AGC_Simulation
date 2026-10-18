@@ -12,7 +12,8 @@ namespace Agc.Core;
 ///   21~25 데이터 로드(R1/R2/R3/R1R2/R1R2R3; 현재 N36 시계만)
 ///   33 진행(PRO와 같은 응답)          34 종료(진행 중인 입력/표시 취소)
 ///   35 램프 테스트(약 5초, V/N 깜박임, 종료 후 88 표시가 남음)   37 프로그램 변경(요청은 <see cref="IProgramControl"/>로 전달)
-/// 지원 Noun: 09(알람, 8진), 36(시계), 43(위도/경도/고도), 63(속도/고도변화율/계산 고도), 68(착륙지점 사거리/제동 잔여시간).
+/// 지원 Noun: 09(알람, 8진), 36(시계), 43(위도/경도/고도), 62(속도 — 사령선/착륙선 정의가 다름),
+/// 63·68(착륙선 하강 전용: 속도·고도변화율·계산 고도 / 착륙지점 사거리·제동 잔여시간).
 /// Noun 정의는 DskyNouns를 참고한다.
 ///
 /// 깜박임(VerbNounFlashing): 램프 테스트, 데이터 로드 대기, V37 프로그램 번호 대기, 깜박임 요청 표시 중.
@@ -75,6 +76,9 @@ public sealed class DskyController
     private bool _progAlarm;
     private bool _keyRelLamp;
     private bool _requestFlash;
+    // 지금 떠 있는 표시가 프로그램의 표시 요청으로 나타난 것인지(true) 승무원이 직접 명령한 것인지(false).
+    // 프로그램 표시는 다음 프로그램 표시로 바로 교체되지만, 승무원이 쓰는 표시는 KEY REL을 거쳐야 교체된다.
+    private bool _programOwnsDisplay;
     private (int Verb, int Noun, bool Flash)? _pendingRequest;
     private TimeSpan _clockOffset = TimeSpan.Zero;
     private TimeSpan _sinceMonitorRefresh = TimeSpan.Zero;
@@ -93,12 +97,13 @@ public sealed class DskyController
     {
         get
         {
+            var vehicle = _telemetry.Current.Vehicle;
             if (IsLampTestActive)
             {
                 return new DskyDisplay(
                     LampTestField, LampTestField, LampTestField,
                     LampTestRegister, LampTestRegister, LampTestRegister,
-                    DskyLamps.All, VerbNounFlashing: true);
+                    InstalledLamps(vehicle), VerbNounFlashing: true, Vehicle: vehicle);
             }
 
             return new DskyDisplay(
@@ -107,7 +112,8 @@ public sealed class DskyController
                 _nounText.PadRight(FieldDigits),
                 _registers[0], _registers[1], _registers[2],
                 BuildLamps(),
-                VerbNounFlashing: _mode != Mode.Idle || _requestFlash);
+                VerbNounFlashing: _mode != Mode.Idle || _requestFlash,
+                Vehicle: vehicle);
         }
     }
 
@@ -115,7 +121,8 @@ public sealed class DskyController
 
     /// <summary>승무원이 DSKY를 사용 중인지(키 입력 중, 로드/프로그램 대기 중, 표시가 떠 있음).</summary>
     private bool IsCrewUsingDisplay =>
-        _entry != EntryField.None || _mode != Mode.Idle || _activeNoun is not null || IsLampTestActive;
+        _entry != EntryField.None || _mode != Mode.Idle || IsLampTestActive
+        || (_activeNoun is not null && !_programOwnsDisplay);
 
     /// <summary>
     /// 키 한 개를 누른다. 입력 상태에 맞지 않는 키는 OPR ERR 램프를 켠다.
@@ -273,6 +280,8 @@ public sealed class DskyController
 
     private void BeginEntry(EntryField field)
     {
+        // 승무원이 VERB/NOUN을 누르면 표시의 주인이 승무원이 된다.
+        _programOwnsDisplay = false;
         // 실제 DSKY처럼 VERB/NOUN 키를 누르면 해당 창을 비우고 새 입력을 받는다.
         _entry = field;
         if (field == EntryField.Verb)
@@ -533,6 +542,7 @@ public sealed class DskyController
             return;
         }
 
+        _programOwnsDisplay = false;
         _activeNoun = noun;
         _isMonitoring = verb == VerbMonitor;
         _sinceMonitorRefresh = TimeSpan.Zero;
@@ -540,15 +550,24 @@ public sealed class DskyController
         _log.Info($"V{verb:D2} N{noun:D2} executed");
     }
 
-    /// <summary>V05는 알람 Noun(09)만, V06/V16은 텔레메트리 Noun(36/43/63/68)만 허용한다.</summary>
-    private static bool IsNounAllowed(int verb, int noun)
+    /// <summary>
+    /// V05는 알람 Noun(09)만, V06/V16은 현재 우주선의 텔레메트리 Noun만 허용한다
+    /// (사령선 36/43/62, 달착륙선 36/43/62/63/68).
+    /// </summary>
+    private bool IsNounAllowed(int verb, int noun)
     {
         if (verb == VerbAlarmDisplay)
         {
             return noun == DskyNouns.AlarmCodes;
         }
 
-        return DskyNouns.IsTelemetryNoun(noun);
+        return DskyNouns.IsTelemetryNoun(noun, _telemetry.Current.Vehicle);
+    }
+
+    /// <summary>이 우주선의 DSKY에 실제로 있는 램프. ALT/VEL은 달착륙선에만 있다.</summary>
+    private static DskyLamps InstalledLamps(AgcVehicle vehicle)
+    {
+        return vehicle == AgcVehicle.Lm ? DskyLamps.All : DskyLamps.All & ~(DskyLamps.Alt | DskyLamps.Vel);
     }
 
     /// <summary>V35가 끝난 뒤: 깜박임은 멈추고 88 표시는 남는다(Virtual AGC 문서 기준).</summary>
@@ -570,6 +589,7 @@ public sealed class DskyController
         _activeNoun = noun;
         _isMonitoring = verb == VerbMonitor;
         _requestFlash = flash;
+        _programOwnsDisplay = true;
         _sinceMonitorRefresh = TimeSpan.Zero;
         RefreshRegisters();
         _log.Info($"Program display V{verb:D2} N{noun:D2}{(flash ? " (flashing)" : string.Empty)}");
@@ -616,6 +636,7 @@ public sealed class DskyController
 
         _load = session;
         _mode = Mode.LoadingData;
+        _programOwnsDisplay = false;
         _activeNoun = noun;
         _isMonitoring = false;
         ShowLoadRegisters();

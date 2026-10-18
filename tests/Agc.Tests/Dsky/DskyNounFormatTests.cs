@@ -85,16 +85,68 @@ public sealed class DskyNounFormatTests
     [TestMethod]
     public void TryFormat_UnknownNoun_ReturnsFalse()
     {
-        // N62는 Luminary에서 속도/점화까지 시간/누적 ΔV 이며 아직 지원하지 않는다.
-        Assert.IsFalse(DskyNouns.TryFormat(62, FakeTelemetry.Make(), out _));
         Assert.IsFalse(DskyNouns.TryFormat(99, FakeTelemetry.Make(), out _));
+        Assert.IsFalse(DskyNouns.TryFormat(64, FakeTelemetry.Make(), out _), "N64는 아직 지원하지 않는다");
     }
 
     [TestMethod]
-    public void IsTelemetryNoun_OnlyForSupportedNouns()
+    public void IsTelemetryNoun_LunarModuleSupportsClockPositionVelocityDescentAndRange()
     {
-        Assert.IsTrue(new[] { 36, 43, 63, 68 }.All(DskyNouns.IsTelemetryNoun));
-        Assert.IsFalse(DskyNouns.IsTelemetryNoun(DskyNouns.AlarmCodes));
-        Assert.IsFalse(DskyNouns.IsTelemetryNoun(62));
+        Assert.IsTrue(new[] { 36, 43, 62, 63, 68 }.All(n => DskyNouns.IsTelemetryNoun(n, AgcVehicle.Lm)));
+        Assert.IsFalse(DskyNouns.IsTelemetryNoun(DskyNouns.AlarmCodes, AgcVehicle.Lm));
+    }
+
+    [TestMethod]
+    public void IsTelemetryNoun_CommandModuleSupportsClockPositionAndVelocityOnly()
+    {
+        Assert.IsTrue(new[] { 36, 43, 62 }.All(n => DskyNouns.IsTelemetryNoun(n, AgcVehicle.Csm)));
+        Assert.IsFalse(DskyNouns.IsTelemetryNoun(63, AgcVehicle.Csm), "CM의 N63은 재진입 사거리/예측속도/TTE(아직 미지원)");
+        Assert.IsFalse(DskyNouns.IsTelemetryNoun(68, AgcVehicle.Csm), "CM의 N68은 재진입 뱅크각/속도/Rdot(아직 미지원)");
+    }
+
+    [TestMethod]
+    public void Noun62_CommandModule_ShowsWholeFpsVelocityAltRateAndAltitudeInTenthNm()
+    {
+        // Comanche 055: N62 = 관성속도 크기(VEL2 XXXXX. ft/s), 고도변화율(VEL2), 패드 반경 위 고도(POS4 XXXX.X nm)
+        var t = FakeTelemetry.Make(speed: 304.8, verticalSpeed: -30.48, altitude: 18520, vehicle: AgcVehicle.Csm);
+
+        Assert.IsTrue(DskyNouns.TryFormat(DskyNouns.Velocity, t, out var r));
+
+        CollectionAssert.AreEqual(new[] { "+01000", "-00100", "+00100" }, r);
+    }
+
+    [TestMethod]
+    public void Noun62_LunarModule_ShowsVelocityTimeToIgnitionAndDeltaV()
+    {
+        // Luminary 099: N62 = 속도(VEL3 XXXX.X ft/s), 점화까지 시간(MIN/SEC), 누적 ΔV(VEL3, 모델링 안 함 → 0)
+        var t = FakeTelemetry.Make(speed: 304.8, timeToNextPhase: TimeSpan.FromSeconds(507), vehicle: AgcVehicle.Lm);
+
+        Assert.IsTrue(DskyNouns.TryFormat(DskyNouns.Velocity, t, out var r));
+
+        CollectionAssert.AreEqual(new[] { "+10000", "+08 27", "+00000" }, r);
+    }
+
+    [TestMethod]
+    public void LandingNouns_OnCommandModule_AreNotFormatted()
+    {
+        var cm = FakeTelemetry.Make(vehicle: AgcVehicle.Csm);
+
+        Assert.IsFalse(DskyNouns.TryFormat(DskyNouns.LandingVelocity, cm, out _));
+        Assert.IsFalse(DskyNouns.TryFormat(DskyNouns.LandingRange, cm, out _));
+    }
+
+    [TestMethod]
+    public void ClockAndPositionNouns_AreTheSameOnBothVehicles()
+    {
+        var met = new TimeSpan(0, 5, 6, 7, 120);
+        var cm = FakeTelemetry.Make(met: met, lat: 1.5, lon: -2.5, altitude: 1852, vehicle: AgcVehicle.Csm);
+        var lm = FakeTelemetry.Make(met: met, lat: 1.5, lon: -2.5, altitude: 1852, vehicle: AgcVehicle.Lm);
+
+        foreach (var noun in new[] { DskyNouns.ClockTime, DskyNouns.LatLongAltitude })
+        {
+            Assert.IsTrue(DskyNouns.TryFormat(noun, cm, out var a));
+            Assert.IsTrue(DskyNouns.TryFormat(noun, lm, out var b));
+            CollectionAssert.AreEqual(a, b, $"N{noun}");
+        }
     }
 }

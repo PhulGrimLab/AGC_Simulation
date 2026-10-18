@@ -204,6 +204,44 @@ public sealed class DskyProgramAndDisplayRequestTests
     }
 
     [TestMethod]
+    public void ProgramDisplay_IsReplacedByNextProgramDisplay_WithoutKeyRel()
+    {
+        _dsky.RequestDisplay(16, 43, flash: false);
+
+        _dsky.RequestDisplay(6, 36, flash: false);
+
+        var d = _dsky.Display;
+        Assert.IsFalse(d.Lamps.HasFlag(DskyLamps.KeyRel), "프로그램이 띄운 표시는 승무원이 쓰는 표시가 아니다");
+        Assert.AreEqual("06", d.Verb);
+        Assert.AreEqual("36", d.Noun);
+    }
+
+    [TestMethod]
+    public void ProgramDisplay_TakenOverByTheCrew_ThenNextRequestLightsKeyRel()
+    {
+        _dsky.RequestDisplay(16, 43, flash: false);
+        _dsky.Press("V06N36E");
+
+        _dsky.RequestDisplay(16, 62, flash: false);
+
+        var d = _dsky.Display;
+        Assert.IsTrue(d.Lamps.HasFlag(DskyLamps.KeyRel), "승무원이 자기 명령으로 바꾼 표시는 보호된다");
+        Assert.AreEqual("36", d.Noun);
+    }
+
+    [TestMethod]
+    public void CrewTypingOverAProgramDisplay_ProtectsItFromTheNextRequest()
+    {
+        _dsky.RequestDisplay(16, 43, flash: false);
+        _dsky.Press("V1");
+
+        _dsky.RequestDisplay(6, 36, flash: false);
+
+        Assert.IsTrue(_dsky.Display.Lamps.HasFlag(DskyLamps.KeyRel));
+        Assert.AreEqual("1 ", _dsky.Display.Verb);
+    }
+
+    [TestMethod]
     public void RequestDisplay_WhileCrewTyping_LightsKeyRelAndWaits()
     {
         _dsky.Press("V1");
