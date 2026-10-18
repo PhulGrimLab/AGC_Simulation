@@ -26,6 +26,8 @@ public sealed class DskyController
     private const int VerbDisplayOnce = 6;
     private const int VerbMonitor = 16;
     private const int VerbProceed = 33;
+    // V99 PLEASE ENABLE ENGINE IGNITION: 점화 5초 전 프로그램이 점멸로 승무원의 PRO를 요청한다.
+    private const int VerbEnableEngine = 99;
     private const int VerbTerminate = 34;
     private const int VerbLampTest = 35;
     private const int VerbProgramChange = 37;
@@ -80,6 +82,8 @@ public sealed class DskyController
     // 프로그램 표시는 다음 프로그램 표시로 바로 교체되지만, 승무원이 쓰는 표시는 KEY REL을 거쳐야 교체된다.
     private bool _programOwnsDisplay;
     private (int Verb, int Noun, bool Flash)? _pendingRequest;
+    // 프로그램이 마지막으로 요청한 표시. Executive 재시작 뒤 프로그램이 이 표시를 다시 띄운다.
+    private (int Verb, int Noun, bool Flash)? _lastProgramRequest;
     private TimeSpan _clockOffset = TimeSpan.Zero;
     private TimeSpan _sinceMonitorRefresh = TimeSpan.Zero;
     private TimeSpan _lampTestRemaining = TimeSpan.Zero;
@@ -228,7 +232,9 @@ public sealed class DskyController
     /// <param name="flash">true이면 V/N을 깜박여 응답(PRO)을 요청한다.</param>
     public void RequestDisplay(int verb, int noun, bool flash)
     {
-        if (verb is not (VerbAlarmDisplay or VerbDisplayOnce or VerbMonitor) || !IsNounAllowed(verb, noun))
+        // V99(점화 허가 요청)는 승무원의 응답을 기다리는 표시이므로 반드시 깜박여야 한다.
+        var isEnableRequest = verb == VerbEnableEngine && flash;
+        if (!(isEnableRequest || verb is VerbAlarmDisplay or VerbDisplayOnce or VerbMonitor) || !IsNounAllowed(verb, noun))
         {
             _log.Warn($"Ignored display request V{verb:D2} N{noun:D2}");
             return;
@@ -243,6 +249,34 @@ public sealed class DskyController
         else
         {
             PresentRequest(verb, noun, flash);
+        }
+    }
+
+    /// <summary>
+    /// Executive 재시작(1201/1202 BAILOUT 등). 재시작 보호가 없는 승무원의 모니터(V16)는 사라지고,
+    /// 프로그램이 요청했던 표시가 있으면 그 표시가 돌아온다(Apollo 11: V16 N68 → N63). 정적 표시(V05/V06)와 입력 중인 키는 그대로 둔다.
+    /// </summary>
+    public void ExecutiveRestart()
+    {
+        _log.Warn("Executive restart: unprotected crew monitor dropped");
+        if (!_isMonitoring || _programOwnsDisplay || _entry != EntryField.None || _mode != Mode.Idle)
+        {
+            // 모니터가 없거나, 프로그램의 표시이거나, 승무원이 입력 중이면 바꿀 것이 없다.
+            return;
+        }
+
+        _isMonitoring = false;
+        _activeNoun = null;
+        _registers = NewBlankRegisters();
+        _verbText = string.Empty;
+        _nounText = string.Empty;
+        if (_lastProgramRequest is { } request)
+        {
+            PresentRequest(request.Verb, request.Noun, request.Flash);
+        }
+        else
+        {
+            // 되돌릴 프로그램 표시가 없으면 화면이 비어 있다.
         }
     }
 
@@ -587,9 +621,10 @@ public sealed class DskyController
         _verbText = verb.ToString("D2");
         _nounText = noun.ToString("D2");
         _activeNoun = noun;
-        _isMonitoring = verb == VerbMonitor;
+        _isMonitoring = verb is VerbMonitor or VerbEnableEngine;
         _requestFlash = flash;
         _programOwnsDisplay = true;
+        _lastProgramRequest = (verb, noun, flash);
         _sinceMonitorRefresh = TimeSpan.Zero;
         RefreshRegisters();
         _log.Info($"Program display V{verb:D2} N{noun:D2}{(flash ? " (flashing)" : string.Empty)}");

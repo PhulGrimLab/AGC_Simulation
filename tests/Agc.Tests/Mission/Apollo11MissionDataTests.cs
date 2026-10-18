@@ -124,7 +124,8 @@ public sealed class Apollo11MissionDataTests
         Assert.IsTrue(requests.Any(r => r.Met == new TimeSpan(102, 33, 5) && r.Verb == 16 && r.Noun == 63), "P63: V16 N63");
         foreach (var request in requests)
         {
-            Assert.IsTrue(Timeline.Keyframes.Any(k => k.Met == request.Met), $"요청은 단계 시작 시각에 있어야 한다: {request.Met}");
+            Assert.IsTrue(request.Met >= TimeSpan.Zero && request.Met <= Timeline.Duration, $"요청은 미션 시간 안에 있어야 한다: {request.Met}");
+            Assert.IsTrue(request.Verb == 99 ? request.Flash : !request.Flash, "점멸하는 요청은 점화 허가(V99)뿐이다");
         }
     }
 

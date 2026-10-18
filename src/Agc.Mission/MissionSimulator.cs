@@ -31,6 +31,9 @@ public sealed class MissionSimulator : ITelemetrySource, IProgramControl
     /// <summary>다른 단계(키프레임)로 넘어갔을 때. 인자는 새 스냅샷.</summary>
     public event Action<MissionSnapshot>? PhaseChanged;
 
+    /// <summary>재생(Advance)으로 시간이 흘렀을 때. 인자는 (이전 MET, 새 MET). Seek은 발생시키지 않는다.</summary>
+    public event Action<TimeSpan, TimeSpan>? Advanced;
+
     public MissionTimeline Timeline => _timeline;
 
     public MissionSnapshot Snapshot => _snapshot;
@@ -92,6 +95,16 @@ public sealed class MissionSimulator : ITelemetrySource, IProgramControl
         // (핸들러가 로그/표시 갱신에 쓰는 현재 MET와 단계가 이미 최신이어야 한다.)
         var crossedAlarms = _timeline.Alarms.Where(a => a.Met > oldMet && a.Met <= newMet).ToList();
         MoveTo(newMet);
+        if (newMet > oldMet)
+        {
+            // 알람보다 먼저 알려, 재시작이 그 시점까지의 최신 프로그램 표시로 복귀하게 한다.
+            Advanced?.Invoke(oldMet, newMet);
+        }
+        else
+        {
+            // 시간이 흐르지 않았으면 지나간 시각이 없다.
+        }
+
         foreach (var alarm in crossedAlarms)
         {
             AlarmRaised?.Invoke(alarm);

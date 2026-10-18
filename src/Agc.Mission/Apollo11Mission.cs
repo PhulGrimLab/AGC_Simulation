@@ -30,14 +30,16 @@ public static class Apollo11Mission
     /// <summary>
     /// 프로그램이 단계 시작 때 스스로 띄우는 표시.
     /// 발사(P11): 사령선 CMC가 V06 N62(관성속도/고도변화율/고도)를 계속 갱신해 보여 준다(Comanche 055 P11).
-    /// 동력 하강: 점화 후 N63(속도/고도변화율/계산 고도)이 표시된다(Eyles). 점화 전 V06 N62 카운트다운과
-    /// 이후 N64는 아직 모델링하지 않는다.
+    /// 동력 하강: 점화 전 V16 N62 카운트다운(시작 시점은 근사값이며 출처 미확인), 점화 5초 전 V99 점멸(허가 요청, Eyles에서
+    /// Aldrin이 PROCEED를 누름), 점화 후 N63(속도/고도변화율/계산 고도, Eyles). 이후 N64는 아직 모델링하지 않는다.
     /// </summary>
     private static List<MissionDisplayRequest> BuildDisplayRequests()
     {
         return
         [
             new MissionDisplayRequest(Met(0, 0, 0), 16, 62, false),
+            new MissionDisplayRequest(Met(102, 32, 5), 16, 62, false),
+            new MissionDisplayRequest(Met(102, 33, 0), 99, 62, true),
             new MissionDisplayRequest(Met(102, 33, 5), 16, 63, false),
         ];
     }

@@ -65,8 +65,8 @@ public enum MissionScene
 }
 
 /// <summary>
-/// 프로그램이 특정 단계가 시작되는 순간 DSKY에 스스로 띄우는 표시(예: P11의 V16 N62).
-/// Met는 단계(키프레임) 시작 시각과 같아야 한다.
+/// 프로그램이 특정 시각에 DSKY에 스스로 띄우는 표시(예: P11의 V16 N62, 점화 5초 전 V99 점멸).
+/// 단계(키프레임) 시작 시각일 수도, 단계 도중의 시각일 수도 있다.
 /// </summary>
 public sealed record MissionDisplayRequest(TimeSpan Met, int Verb, int Noun, bool Flash);
 
